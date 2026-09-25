@@ -7,6 +7,16 @@ const publicDir = path.join(__dirname, 'public');
 const mimeTypes = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml' };
 
 const server = http.createServer((req, res) => {
+    if (req.url === '/api/config') {
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8'
+    });
+    res.end(JSON.stringify({
+      url: process.env.SUPABASE_URL || '',
+      key: process.env.SUPABASE_ANON_KEY || ''
+    }));
+    return;
+  }
   if (req.url === '/api/health') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ ok: true, service: 'studio-gym', timestamp: new Date().toISOString() }));
