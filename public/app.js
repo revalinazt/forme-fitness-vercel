@@ -98,9 +98,11 @@ fetch('/api/config')
   .then((response) => response.json())
   .then((config) => {
     state.config = config;
-    $('#projectUrl').value = config.url || '';
-    $('#publishableKey').value = config.key || '';
+    render();
     return loadData(false);
   })
   .then(() => render())
-  .catch(() => {});
+  .catch((error) => {
+    console.error('Gagal memuat konfigurasi Supabase:', error);
+    render();
+  });
