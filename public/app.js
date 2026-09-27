@@ -98,6 +98,8 @@ fetch('/api/config')
   .then((response) => response.json())
   .then((config) => {
     state.config = config;
+    $('#projectUrl').value = config.url || '';
+    $('#publishableKey').value = config.key || '';
     return loadData(false);
   })
   .then(() => render())
