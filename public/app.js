@@ -1,4 +1,7 @@
-const state = { view: 'overview', data: { customers: [], plans: [], memberships: [], payments: [] }, demoClassSessions: [], demoClassRegistrations: [], config: JSON.parse(localStorage.getItem('studioGymConfig') || '{}'), planFilters: { service: '', duration: '' }, membershipFilter: 'active', membershipSearch: '', customerFilter: 'all', customerSearch: '', financeFilters: { startDate: '', endDate: '', account: 'all' }, paymentFilters: { startDate: '', endDate: '', method: '', status: '' }, classFilters: { service: 'all', date: '', status: 'all' }, selectedClassSessionId: '', showClassSessionForm: false, loading: false };
+const state = { view: 'overview', data: { customers: [], plans: [], memberships: [], payments: [] }, demoClassSessions: [], demoClassRegistrations: [], config: {
+  url: 'https://vmecalefbqgjiexdhaab.supabase.co',
+  key: 'sb_publishable_FRGET5D7bDAdySoctcuI7Q_9dF-JCNO'
+}, planFilters: { service: '', duration: '' }, membershipFilter: 'active', membershipSearch: '', customerFilter: 'all', customerSearch: '', financeFilters: { startDate: '', endDate: '', account: 'all' }, paymentFilters: { startDate: '', endDate: '', method: '', status: '' }, classFilters: { service: 'all', date: '', status: 'all' }, selectedClassSessionId: '', showClassSessionForm: false, loading: false };
 const $ = (selector) => document.querySelector(selector);
 const money = (value) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(value || 0));
 const date = (value) => value ? new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(`${value}T00:00:00`)) : '-';
