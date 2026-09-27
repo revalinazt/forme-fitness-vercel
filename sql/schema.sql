@@ -37,6 +37,11 @@ create table if not exists public.membership_plans (
   created_at timestamptz not null default now()
 );
 
+-- Remove the temporary frontend-class persistence upgrade; FORMÉ keeps its four-table ERD.
+drop table if exists public.class_registrations;
+drop table if exists public.class_sessions;
+alter table public.membership_plans drop column if exists access_services;
+
 create table if not exists public.memberships (
   id uuid primary key default gen_random_uuid(),
   customer_id uuid not null references public.customers(id) on delete cascade,
@@ -160,10 +165,4 @@ from (values
 ) as seed(name, duration_months, price, access_label)
 where not exists (select 1 from public.membership_plans current_plan where current_plan.name = seed.name);
 
-insert into public.customers (member_code, full_name, email, phone, join_date)
-select * from (values
-  ('SG-1001', 'Nadia Prameswari', 'nadia@example.com', '+62 812 3456 7890', current_date - 42),
-  ('SG-1002', 'Raka Wijaya', 'raka@example.com', '+62 813 2211 7788', current_date - 18),
-  ('SG-1003', 'Sinta Maharani', 'sinta@example.com', '+62 811 9087 1122', current_date - 8)
-) as seed(member_code, full_name, email, phone, join_date)
-where not exists (select 1 from public.customers);
+
