@@ -99,27 +99,12 @@ $('#todayLabel').textContent = new Intl.DateTimeFormat('id-ID', {
 
 async function initializeApp() {
   try {
-    const response = await fetch('/api/config', { cache: 'no-store' });
-
-    if (!response.ok) {
-      throw new Error('Konfigurasi Supabase tidak tersedia.');
-    }
-
-    const config = await response.json();
-
-    if (!config.url || !config.key) {
-      throw new Error('Konfigurasi Supabase belum lengkap.');
-    }
-
     state.config = {
-      url: config.url.replace(/\/$/, ''),
-      key: config.key
+      url: 'https://vmecalefbqgjiexdhaab.supabase.co',
+      key: 'sb_publishable_FRGET5D7bDAdySoctcuI7Q_9dF-JCNO'
     };
 
-    render();
-
     await loadData(false);
-
     render();
   } catch (error) {
     console.error('Gagal menghubungkan Supabase:', error);
