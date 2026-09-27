@@ -91,18 +91,41 @@ $('#closeModal').addEventListener('click', () => { $('#modalBackdrop').hidden = 
 document.addEventListener('click', (event) => { if (event.target.id === 'cancelModal') $('#modalBackdrop').hidden = true; });
 document.addEventListener('submit', (event) => { if (event.target.id === 'entryForm') { void submitEntry(event); return; } if (event.target.id === 'settingsForm') { event.preventDefault(); state.config = { url: $('#projectUrl').value.replace(/\/$/, ''), key: $('#publishableKey').value.trim() }; localStorage.setItem('studioGymConfig', JSON.stringify(state.config)); loadData().then(render).catch(() => render()); } });
 document.addEventListener('input', (event) => { if (event.target.id === 'customerSearch') { const query = event.target.value.toLowerCase(); $('#customerPanel').innerHTML = customerTable(state.data.customers.filter((item) => `${item.full_name} ${item.member_code} ${item.email}`.toLowerCase().includes(query))); } });
-$('#todayLabel').textContent = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date());
-render();
+$('#todayLabel').textContent = new Intl.DateTimeFormat('id-ID', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric'
+}).format(new Date());
 
-fetch('/api/config')
-  .then((response) => response.json())
-  .then((config) => {
-    state.config = config;
+async function initializeApp() {
+  try {
+    const response = await fetch('/api/config', { cache: 'no-store' });
+
+    if (!response.ok) {
+      throw new Error('Konfigurasi Supabase tidak tersedia.');
+    }
+
+    const config = await response.json();
+
+    if (!config.url || !config.key) {
+      throw new Error('Konfigurasi Supabase belum lengkap.');
+    }
+
+    state.config = {
+      url: config.url.replace(/\/$/, ''),
+      key: config.key
+    };
+
     render();
-    return loadData(false);
-  })
-  .then(() => render())
-  .catch((error) => {
-    console.error('Gagal memuat konfigurasi Supabase:', error);
+
+    await loadData(false);
+
     render();
-  });
+  } catch (error) {
+    console.error('Gagal menghubungkan Supabase:', error);
+    $('#connectionLabel').textContent = 'Koneksi gagal, mode demo';
+    render();
+  }
+}
+
+initializeApp();
