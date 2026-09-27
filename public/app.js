@@ -19,7 +19,7 @@ const DEMO = {
   ]
 };
 
-const state = { view: 'overview', data: structuredClone(DEMO), config: JSON.parse(localStorage.getItem('studioGymConfig') || '{}'), planFilters: { service: '', duration: '' } };
+const state = { view: 'overview', data: structuredClone(DEMO), config: {}, planFilters: { service: '', duration: '' } };
 const $ = (selector) => document.querySelector(selector);
 const money = (value) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(value || 0));
 const date = (value) => value ? new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(`${value}T00:00:00`)) : '-';
@@ -93,4 +93,12 @@ document.addEventListener('submit', (event) => { if (event.target.id === 'entryF
 document.addEventListener('input', (event) => { if (event.target.id === 'customerSearch') { const query = event.target.value.toLowerCase(); $('#customerPanel').innerHTML = customerTable(state.data.customers.filter((item) => `${item.full_name} ${item.member_code} ${item.email}`.toLowerCase().includes(query))); } });
 $('#todayLabel').textContent = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date());
 render();
-loadData().catch(() => {});
+
+fetch('/api/config')
+  .then((response) => response.json())
+  .then((config) => {
+    state.config = config;
+    return loadData(false);
+  })
+  .then(() => render())
+  .catch(() => {});
