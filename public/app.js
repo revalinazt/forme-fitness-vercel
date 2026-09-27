@@ -1,25 +1,4 @@
-const DEMO = {
-  customers: [
-    { id: 'demo-1', member_code: 'SG-1001', full_name: 'Nadia Prameswari', email: 'nadia@example.com', phone: '+62 812 3456 7890', join_date: '2026-08-14' },
-    { id: 'demo-2', member_code: 'SG-1002', full_name: 'Raka Wijaya', email: 'raka@example.com', phone: '+62 813 2211 7788', join_date: '2026-09-07' },
-    { id: 'demo-3', member_code: 'SG-1003', full_name: 'Sinta Maharani', email: 'sinta@example.com', phone: '+62 811 9087 1122', join_date: '2026-09-17' }
-  ],
-  plans: [
-    { id: 'plan-1', name: 'Gym Monthly', duration_months: 1, price: 350000, access_label: 'Strength & Cardio', is_active: true },
-    { id: 'plan-2', name: 'Pilates Annual', duration_months: 12, price: 4800000, access_label: 'Core & Mobility', is_active: true },
-    { id: 'plan-3', name: 'All Access Annual', duration_months: 12, price: 6500000, access_label: 'All Services', is_active: true }
-  ],
-  memberships: [
-    { id: 'membership-1', customer_id: 'demo-1', plan_id: 'plan-1', start_date: '2026-09-25', end_date: '2026-10-25', status: 'active', amount: 350000 },
-    { id: 'membership-2', customer_id: 'demo-2', plan_id: 'plan-2', start_date: '2026-09-07', end_date: '2027-09-07', status: 'active', amount: 4800000 },
-    { id: 'membership-3', customer_id: 'demo-3', plan_id: 'plan-3', start_date: '2026-09-17', end_date: '2027-09-17', status: 'active', amount: 6500000 }
-  ],
-  payments: [
-    { id: 'payment-1', customer_id: 'demo-1', membership_id: 'membership-1', amount: 350000, payment_date: '2026-09-25', payment_method: 'transfer', status: 'paid', reference: 'PAY-0001', notes: 'Gym Monthly membership' }
-  ]
-};
-
-const state = { view: 'overview', data: structuredClone(DEMO), config: {}, planFilters: { service: '', duration: '' } };
+const state = { view: 'overview', data: { customers: [], plans: [], memberships: [], payments: [] }, demoClassSessions: [], demoClassRegistrations: [], config: JSON.parse(localStorage.getItem('studioGymConfig') || '{}'), planFilters: { service: '', duration: '' }, membershipFilter: 'active', membershipSearch: '', customerFilter: 'all', customerSearch: '', financeFilters: { startDate: '', endDate: '', account: 'all' }, paymentFilters: { startDate: '', endDate: '', method: '', status: '' }, classFilters: { service: 'all', date: '', status: 'all' }, selectedClassSessionId: '', showClassSessionForm: false, loading: false };
 const $ = (selector) => document.querySelector(selector);
 const money = (value) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(value || 0));
 const date = (value) => value ? new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(`${value}T00:00:00`)) : '-';
@@ -31,86 +10,805 @@ const membershipById = (id) => state.data.memberships.find((item) => item.id ===
 const collectionFor = (type) => type === 'customer' ? 'customers' : type === 'membership' ? 'memberships' : type === 'payment' ? 'payments' : 'payments';
 function planService(plan) { const value = `${plan?.name || ''} ${plan?.access_label || ''}`.toLowerCase(); if (value.includes('all access') || value.includes('all services') || value.includes('gym +')) return 'All Access'; if (value.includes('functional')) return 'Functional Training'; if (value.includes('women')) return 'Women Only'; if (value.includes('pilates')) return 'Pilates'; if (value.includes('zumba')) return 'Zumba'; if (value.includes('yoga')) return 'Yoga'; if (value.includes('gym')) return 'Gym'; return 'Other'; }
 function durationLabel(months) { return Number(months) === 1 ? 'Monthly' : Number(months) === 3 ? 'Quarterly' : Number(months) === 12 ? 'Annual' : `${months} Months`; }
-function addMonths(value, months) { const result = new Date(`${value}T00:00:00`); const originalDay = result.getDate(); result.setMonth(result.getMonth() + Number(months)); if (result.getDate() !== originalDay) result.setDate(0); return result.toISOString().slice(0, 10); }
+function addMonths(value, months) { const result = new Date(`${value}T00:00:00`); const originalDay = result.getDate(); result.setMonth(result.getMonth() + Number(months)); if (result.getDate() !== originalDay) result.setDate(0); return `${result.getFullYear()}-${String(result.getMonth() + 1).padStart(2, '0')}-${String(result.getDate()).padStart(2, '0')}`; }
 function escapeHtml(text) { return String(text ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char])); }
 function showToast(message, isError = false) { const toast = $('#toast'); toast.textContent = message; toast.classList.toggle('error', isError); toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 3000); }
 function apiReady() { return Boolean(state.config.url && state.config.key); }
 async function supabase(table, options = {}) { const response = await fetch(`${state.config.url}/rest/v1/${table}${options.query || ''}`, { method: options.method || 'GET', headers: { apikey: state.config.key, Authorization: `Bearer ${state.config.key}`, 'Content-Type': 'application/json', ...(options.method !== 'GET' ? { Prefer: 'return=representation' } : {}) }, body: options.body ? JSON.stringify(options.body) : undefined }); if (!response.ok) throw new Error(await response.text()); return response.status === 204 ? null : response.json(); }
-async function loadData(notify = true) { if (!apiReady()) return; try { const [customers, plans, memberships, payments] = await Promise.all(['customers', 'membership_plans', 'memberships', 'payments'].map((table) => supabase(table))); state.data = { customers, plans, memberships, payments }; $('#connectionLabel').textContent = 'Supabase tersambung'; if (notify) showToast('Data Supabase diperbarui'); } catch (error) { $('#connectionLabel').textContent = 'Koneksi gagal, mode demo'; if (notify) showToast('Supabase belum dapat diakses', true); throw error; } }
+async function supabaseAll(table) {
+  const pageSize = 500;
+  const rows = [];
+  let offset = 0;
+  while (true) {
+    const response = await fetch(`${state.config.url}/rest/v1/${table}?select=*&order=created_at.asc,id.asc`, {
+      method: 'GET',
+      headers: {
+        apikey: state.config.key,
+        Authorization: `Bearer ${state.config.key}`,
+        'Content-Type': 'application/json',
+        Prefer: 'count=exact',
+        'Range-Unit': 'items',
+        Range: `${offset}-${offset + pageSize - 1}`
+      }
+    });
+    if (!response.ok) throw new Error(await response.text());
+    const page = await response.json();
+    rows.push(...page);
+    if (!page.length) break;
+    const range = /^\d+-(\d+)\/(\d+|\*)$/.exec(response.headers.get('Content-Range') || '');
+    if (range) {
+      const nextOffset = Number(range[1]) + 1;
+      if (range[2] !== '*' && nextOffset >= Number(range[2])) break;
+      if (nextOffset <= offset) throw new Error(`Pagination Supabase ${table} tidak bergerak.`);
+      offset = nextOffset;
+      continue;
+    }
+    if (page.length < pageSize) break;
+    offset += page.length;
+  }
+  return rows;
+}
+async function loadData(notify = true) {
+  if (!apiReady()) { $('#connectionLabel').textContent = 'Belum dikonfigurasi'; return; }
+  state.loading = true;
+  $('#connectionLabel').textContent = 'Memuat data Supabase';
+  render();
+  try {
+    const [customers, plans, memberships, payments] = await Promise.all([supabaseAll('customers'), supabase('membership_plans'), supabase('memberships'), supabase('payments')]);
+    state.data = { customers, plans, memberships, payments };
+    seedDemoClassRegistrations();
+    state.loading = false;
+    $('#connectionLabel').textContent = 'Supabase tersambung';
+    render();
+    if (notify) showToast('Data Supabase diperbarui');
+  } catch (error) {
+    state.loading = false;
+    $('#connectionLabel').textContent = 'Koneksi gagal';
+    render();
+    if (notify) showToast(`Supabase belum dapat diakses: ${supabaseError(error)}`, true);
+    throw error;
+  }
+}
 function statCard(label, value, foot, accent = false) { return `<article class="stat-card ${accent ? 'accent' : ''}"><div class="stat-label"><span>${label}</span><span>↗</span></div><div class="stat-value">${value}</div><div class="stat-foot"><span class="up">●</span>${foot}</div></article>`; }
 function actionButtons(type, id) { return `<div class="row-actions"><button class="table-action" data-action="edit" data-type="${type}" data-id="${escapeHtml(id)}" title="Edit data">Edit</button><button class="table-action danger" data-action="delete" data-type="${type}" data-id="${escapeHtml(id)}" title="Hapus data">Hapus</button></div>`; }
 function supabaseError(error) { try { const details = JSON.parse(error.message); return details.message || details.details || details.hint || error.message; } catch (parseError) { return error.message || 'Kesalahan Supabase tidak diketahui.'; } }
 function statusLabel(status) { return status === 'paid' ? 'Lunas' : status === 'pending' ? 'Pending' : status === 'refunded' ? 'Refund' : status; }
 function paymentMethodLabel(method) { return method === 'qris' ? 'QRIS' : method === 'cash' ? 'Cash' : 'Transfer'; }
+function paymentRevenueType(payment) {
+  const note = String(payment?.notes || '');
+  const marker = note.match(/^\[FORME:non-membership:(trial|day_pass)\]/i);
+  if (marker) return marker[1].toLowerCase();
+  if (payment?.membership_id) return 'membership';
+  const source = `${payment?.reference || ''} ${note}`.toLowerCase();
+  if (/\bday[ _-]?pass\b/.test(source)) return 'day_pass';
+  if (/\btrial\b/.test(source)) return 'trial';
+  return 'non_membership';
+}
+function paymentRevenueLabel(type) { return type === 'trial' ? 'Trial' : type === 'day_pass' ? 'Day Pass' : 'Non-Membership'; }
+function taggedNonMembershipNotes(type, notes = '') {
+  const cleaned = String(notes).replace(/^\[FORME:non-membership:(trial|day_pass)\]\s*/i, '').trim();
+  return `[FORME:non-membership:${type}]${cleaned ? ` ${cleaned}` : ''}`;
+}
+function cleanPaymentNotes(notes = '') { return String(notes).replace(/^\[FORME:non-membership:(trial|day_pass)\]\s*/i, '').trim(); }
 function paidForMembership(membershipId) { return state.data.payments.some((payment) => payment.membership_id === membershipId && payment.status === 'paid'); }
 function monthKey(value) { const parsed = value instanceof Date ? value : new Date(`${value}T00:00:00`); return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`; }
 function monthStart(key) { return new Date(`${key}-01T00:00:00`); }
 function monthEnd(key) { const start = monthStart(key); return new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59); }
-function recognizedMonths(membership, asOf = new Date()) { if (!membership || !paidForMembership(membership.id)) return 0; const start = new Date(`${membership.start_date}T00:00:00`); const end = new Date(`${membership.end_date}T23:59:59`); const effectiveEnd = end < asOf ? end : asOf; if (effectiveEnd < start) return 0; const months = (effectiveEnd.getFullYear() - start.getFullYear()) * 12 + effectiveEnd.getMonth() - start.getMonth() + 1; return Math.min(Math.max(months, 0), Number(planById(membership.plan_id)?.duration_months || months)); }
+function dateKey(value) { const parsed = value instanceof Date ? value : new Date(`${value}T00:00:00`); return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`; }
+function monthOffset(from, to) { const start = monthStart(from); const end = monthStart(to); return (end.getFullYear() - start.getFullYear()) * 12 + end.getMonth() - start.getMonth(); }
+function recognitionDate(key, membership, payment) {
+  const candidates = [`${key}-01`];
+  if (monthKey(membership.start_date) === key) candidates.push(membership.start_date);
+  if (monthKey(payment.payment_date) === key) candidates.push(payment.payment_date);
+  return candidates.sort().at(-1);
+}
 function monthlyRecognition(membership) { const duration = Number(planById(membership.plan_id)?.duration_months || 0); return duration > 0 ? Number(membership.amount || 0) / duration : 0; }
-function recognizedToDate(membership) { return recognizedMonths(membership) * monthlyRecognition(membership); }
-function recognizedForMonth(key) { const currentKey = monthKey(new Date()); if (key > currentKey) return 0; return state.data.memberships.filter((membership) => { if (!paidForMembership(membership.id)) return false; const serviceStart = new Date(`${membership.start_date}T00:00:00`); const serviceEnd = new Date(`${membership.end_date}T23:59:59`); return serviceStart <= monthEnd(key) && serviceEnd >= monthStart(key) && serviceStart <= new Date(); }).reduce((sum, membership) => sum + monthlyRecognition(membership), 0); }
-function accountingTotals() { const paidMemberships = state.data.memberships.filter((membership) => paidForMembership(membership.id)); const recognized = paidMemberships.reduce((sum, membership) => sum + recognizedToDate(membership), 0); const contractValue = paidMemberships.reduce((sum, membership) => sum + Number(membership.amount || 0), 0); return { recognized, deferred: Math.max(contractValue - recognized, 0) }; }
-function accountingSummaryMarkup() { const totals = accountingTotals(); return `<div class="accounting-strip"><div><span class="accounting-label">PENDAPATAN DIAKUI</span><strong>${money(recognizedForMonth(monthKey(new Date())))}</strong><small>Bulan berjalan</small></div><div><span class="accounting-label">PENDAPATAN BELUM DIAKUI</span><strong>${money(totals.deferred)}</strong><small>Sisa periode layanan</small></div></div>`; }
-function paymentJournalMarkup(payment) { if (!payment || payment.status !== 'paid') return ''; const membership = membershipById(payment.membership_id); const recognized = membership ? Math.min(monthlyRecognition(membership), Number(payment.amount || 0)) : 0; return `<section class="journal-section"><div class="eyebrow">ACCOUNTING ENTRY</div><h3>Jurnal pembayaran</h3><div class="journal-block"><strong>Saat pembayaran diterima</strong><div><span>Dr Kas</span><b>${money(payment.amount)}</b></div><div><span>Cr Pendapatan Diterima di Muka</span><b>${money(payment.amount)}</b></div></div><div class="journal-block"><strong>Pengakuan pendapatan bulan berjalan</strong><div><span>Dr Pendapatan Diterima di Muka</span><b>${money(recognized)}</b></div><div><span>Cr Pendapatan Membership</span><b>${money(recognized)}</b></div></div></section>`; }
-function renderOverview() { const { customers, memberships, payments } = state.data; const paid = payments.filter((item) => item.status === 'paid').reduce((sum, item) => sum + Number(item.amount), 0); const active = memberships.filter((item) => item.status === 'active').length; const month = new Date().getMonth(); const thisMonth = payments.filter((item) => new Date(item.payment_date).getMonth() === month).reduce((sum, item) => sum + Number(item.amount), 0); const rows = [...payments].sort((a, b) => b.payment_date.localeCompare(a.payment_date)).slice(0, 5); return `<div class="page-heading"><div><div class="eyebrow">FINANCIAL SNAPSHOT / 01</div><h1>Operational overview</h1><p>Membership and payment activity for FORME staff.</p></div><div class="date-chip">${date(new Date().toISOString().slice(0, 10))}</div></div><div class="stats-grid">${statCard('TOTAL PEMBAYARAN', money(paid), `${payments.length} pembayaran tercatat`, true)}${statCard('PEMBAYARAN BULAN INI', money(thisMonth), 'berdasarkan tanggal pembayaran')}${statCard('MEMBERSHIP AKTIF', active, `${memberships.length} total kontrak`)}${statCard('TOTAL PELANGGAN', customers.length, 'profil terdaftar')}</div><div class="content-grid"><section class="panel"><div class="panel-header"><div><h2 class="panel-title">Recent Payments</h2><p class="panel-subtitle">Pembayaran membership terbaru</p></div><button class="text-button" data-view="payments">Lihat semua →</button></div>${paymentTable(rows, true)}</section><section class="panel"><div class="panel-header"><div><h2 class="panel-title">Available Plans</h2><p class="panel-subtitle">Paket membership aktif</p></div><button class="text-button" data-view="plans">View all →</button></div><div class="plan-list">${state.data.plans.slice(0, 6).map((plan) => `<div class="plan-row"><div><div class="plan-name">${escapeHtml(plan.name)}</div><span class="plan-meta">${durationLabel(plan.duration_months)} · ${escapeHtml(plan.access_label)}</span></div><div class="plan-total">${money(plan.price)}<small>${memberships.filter((item) => item.plan_id === plan.id).length} pelanggan</small></div></div>`).join('') || '<div class="empty-state">Belum ada membership plan.</div>'}</div></section></div>`; }
-function paymentTable(rows, compact = false) { if (!rows.length) return '<div class="empty-state">Belum ada pembayaran.</div>'; return `<div class="table-wrap"><table><thead><tr><th>PELANGGAN</th><th>MEMBERSHIP</th><th>TANGGAL</th><th>NOMINAL</th><th>METODE</th><th>STATUS</th>${compact ? '' : '<th>AKSI</th>'}</tr></thead><tbody>${rows.map((item) => `<tr><td><div class="customer"><span class="customer-avatar">${initials(customerName(item.customer_id))}</span><div><span class="customer-name">${escapeHtml(customerName(item.customer_id))}</span><span class="customer-id">${escapeHtml(item.reference || 'Tanpa referensi')}</span></div></div></td><td>${escapeHtml(planName(membershipById(item.membership_id)?.plan_id))}</td><td>${date(item.payment_date)}</td><td class="amount">${money(item.amount)}</td><td>${paymentMethodLabel(item.payment_method)}</td><td><span class="badge ${item.status}">${statusLabel(item.status)}</span></td>${compact ? '' : `<td>${actionButtons('payment', item.id)}</td>`}</tr>`).join('')}</tbody></table></div>`; }
-function customerTable(customers) { if (!customers.length) return '<div class="empty-state">Belum ada pelanggan.</div>'; return `<div class="table-wrap"><table><thead><tr><th>PELANGGAN</th><th>KONTAK</th><th>BERGABUNG</th><th>MEMBERSHIP</th><th>PEMBAYARAN</th><th>AKSI</th></tr></thead><tbody>${customers.map((item) => `<tr><td><div class="customer"><span class="customer-avatar">${initials(item.full_name)}</span><div><span class="customer-name">${escapeHtml(item.full_name)}</span><span class="customer-id">${escapeHtml(item.member_code)}</span></div></div></td><td>${escapeHtml(item.email || item.phone || '-')}</td><td>${date(item.join_date)}</td><td><span class="badge">${state.data.memberships.filter((membership) => membership.customer_id === item.id && membership.status === 'active').length} aktif</span></td><td class="amount">${money(state.data.payments.filter((payment) => payment.customer_id === item.id && payment.status === 'paid').reduce((sum, payment) => sum + Number(payment.amount), 0))}</td><td>${actionButtons('customer', item.id)}</td></tr>`).join('')}</tbody></table></div>`; }
-function membershipTable(items) { if (!items.length) return '<div class="empty-state">Belum ada membership.</div>'; return `<div class="table-wrap"><table><thead><tr><th>PELANGGAN</th><th>PAKET</th><th>SERVICE</th><th>PERIODE</th><th>NOMINAL</th><th>STATUS</th><th>AKSI</th></tr></thead><tbody>${items.map((item) => { const plan = planById(item.plan_id); return `<tr><td><div class="customer"><span class="customer-avatar">${initials(customerName(item.customer_id))}</span><span class="customer-name">${escapeHtml(customerName(item.customer_id))}</span></div></td><td>${escapeHtml(planName(item.plan_id))}</td><td>${escapeHtml(planService(plan))}</td><td>${date(item.start_date)} — ${date(item.end_date)}</td><td class="amount">${money(item.amount)}</td><td><span class="badge ${item.status}">${item.status}</span></td><td>${actionButtons('membership', item.id)}</td></tr>`; }).join('')}</tbody></table></div>`; }
-function renderMembers() { return `<div class="page-heading"><div><div class="eyebrow">CUSTOMER DIRECTORY / 02</div><h1>Customers</h1><p>Master data pelanggan FORME.</p></div><button class="primary-button" data-action="add-customer">+ Tambah customer</button></div><div class="toolbar"><input class="search-input" id="customerSearch" placeholder="Cari nama, kode, atau email..."></div><section class="panel" id="customerPanel">${customerTable(state.data.customers)}</section>`; }
-function renderMemberships() { return `<div class="page-heading"><div><div class="eyebrow">MEMBERSHIP REGISTER / 03</div><h1>Memberships</h1><p>Kontrak layanan dan periode membership pelanggan.</p></div><button class="primary-button" data-action="add-membership">+ Tambah membership</button></div><section class="panel">${membershipTable(state.data.memberships)}</section>`; }
-function renderPayments() { return `<div class="page-heading"><div><div class="eyebrow">REVENUE REGISTER / 04</div><h1>Payments</h1><p>Pencatatan pembayaran untuk membership pelanggan.</p></div><button class="primary-button" data-action="add-payment">+ Catat payment</button></div><section class="panel">${paymentTable([...state.data.payments].sort((a, b) => b.payment_date.localeCompare(a.payment_date)))}</section>`; }
-function renderPlans() { const services = ['Gym', 'Pilates', 'Yoga', 'Zumba', 'Functional Training', 'Women Only', 'All Access']; const filtered = state.data.plans.filter((plan) => (!state.planFilters.service || planService(plan) === state.planFilters.service) && (!state.planFilters.duration || durationLabel(plan.duration_months) === state.planFilters.duration)); return `<div class="page-heading"><div><div class="eyebrow">MASTER DATA / 05</div><h1>Membership Plans</h1><p>Plan aktual dari membership_plans untuk pencatatan kontrak.</p></div></div><div class="plans-toolbar"><select class="select-input" id="planServiceFilter"><option value="">All services</option>${services.map((service) => `<option value="${service}" ${state.planFilters.service === service ? 'selected' : ''}>${service}</option>`).join('')}</select><select class="select-input" id="planDurationFilter"><option value="">All durations</option>${['Monthly', 'Quarterly', 'Annual'].map((duration) => `<option value="${duration}" ${state.planFilters.duration === duration ? 'selected' : ''}>${duration}</option>`).join('')}</select></div><section class="panel"><div class="panel-header"><div><h2 class="panel-title">Available Plans</h2><p class="panel-subtitle">${filtered.length} dari ${state.data.plans.length} paket</p></div></div><div class="plan-list">${filtered.map((plan) => `<div class="plan-row plan-row-detailed"><div><div class="plan-name">${escapeHtml(plan.name)}</div><span class="plan-meta"><span class="plan-service-label">${escapeHtml(planService(plan))}</span> · ${durationLabel(plan.duration_months)}</span><span class="plan-access">${escapeHtml(plan.access_label || 'Access details')}</span></div><div class="plan-total">${money(plan.price)}<small>${state.data.memberships.filter((item) => item.plan_id === plan.id).length} pelanggan · ${plan.is_active === false ? 'Inactive' : 'Active'}</small></div></div>`).join('') || '<div class="empty-state">Tidak ada plan yang sesuai filter.</div>'}</div></section>`; }
-function renderRevenueReport() { const paidMemberships = state.data.memberships.filter((membership) => paidForMembership(membership.id)); const reportRows = paidMemberships.map((membership) => { const plan = planById(membership.plan_id); const recognized = recognizedToDate(membership); return { membership, plan, recognized, deferred: Math.max(Number(membership.amount || 0) - recognized, 0) }; }); const months = [...new Set(reportRows.flatMap(({ membership }) => { const result = []; const start = new Date(`${membership.start_date}T00:00:00`); const end = new Date(`${membership.end_date}T00:00:00`); const current = new Date(); for (let cursor = new Date(start.getFullYear(), start.getMonth(), 1); cursor <= end && cursor <= current; cursor.setMonth(cursor.getMonth() + 1)) result.push(monthKey(cursor)); return result; }))].sort().slice(-6); return `<div class="page-heading"><div><div class="eyebrow">REVENUE RECOGNITION / 06</div><h1>Laporan Pendapatan</h1><p>Pendapatan diakui secara sistematis selama periode layanan membership.</p></div></div><section class="panel report-panel"><div class="panel-header"><div><h2 class="panel-title">Pendapatan Membership</h2><p class="panel-subtitle">Hanya membership dengan payment berstatus paid</p></div></div><div class="table-wrap"><table><thead><tr><th>CUSTOMER</th><th>MEMBERSHIP</th><th>NILAI</th><th>DURASI</th><th>PENDAPATAN / BULAN</th><th>SUDAH DIAKUI</th><th>BELUM DIAKUI</th></tr></thead><tbody>${reportRows.map(({ membership, plan, recognized, deferred }) => `<tr><td>${escapeHtml(customerName(membership.customer_id))}</td><td>${escapeHtml(plan?.name || 'Membership')}</td><td class="amount">${money(membership.amount)}</td><td>${durationLabel(plan?.duration_months || 0)}</td><td class="amount">${money(monthlyRecognition(membership))}</td><td class="amount">${money(recognized)}</td><td class="amount">${money(deferred)}</td></tr>`).join('') || '<tr><td colspan="7"><div class="empty-state">Belum ada pendapatan yang dapat diakui.</div></td></tr>'}</tbody></table></div></section><section class="panel report-history"><div class="panel-header"><div><h2 class="panel-title">Riwayat Pengakuan Pendapatan</h2><p class="panel-subtitle">Pendekatan: satu bagian bulanan diakui untuk setiap bulan kalender yang bersinggungan dengan periode layanan.</p></div></div><div class="revenue-month-list">${months.map((month) => `<div><span>${date(`${month}-01`)}</span><strong>${money(recognizedForMonth(month))}</strong></div>`).join('') || '<div class="empty-state">Belum ada periode pengakuan.</div>'}</div></section>`; }
-function reportPaymentForMembership(membershipId) { return state.data.payments.find((payment) => payment.membership_id === membershipId && payment.status === 'paid'); }
-function renderRevenueReport() { const paidPayments = state.data.payments.filter((payment) => payment.status === 'paid'); const totals = accountingTotals(); const currentMonth = recognizedForMonth(monthKey(new Date())); const reportRows = state.data.memberships.filter((membership) => paidForMembership(membership.id)).map((membership) => { const plan = planById(membership.plan_id); const payment = reportPaymentForMembership(membership.id); const recognized = recognizedToDate(membership); return { membership, plan, payment, recognized, deferred: Math.max(Number(membership.amount || 0) - recognized, 0) }; }); const months = [...new Set(reportRows.flatMap(({ membership }) => { const result = []; const start = new Date(`${membership.start_date}T00:00:00`); const end = new Date(`${membership.end_date}T00:00:00`); const current = new Date(); for (let cursor = new Date(start.getFullYear(), start.getMonth(), 1); cursor <= end && cursor <= current; cursor.setMonth(cursor.getMonth() + 1)) result.push(monthKey(cursor)); return result; }))].sort().slice(-6); return `<div class="page-heading"><div><div class="eyebrow">REVENUE RECOGNITION / 06</div><h1>Laporan Pendapatan</h1><p>Pengakuan pendapatan membership dengan metode bulanan tanpa prorata harian.</p></div></div><div class="report-summary-grid">${statCard('PEMBAYARAN DITERIMA', money(paidPayments.reduce((sum, payment) => sum + Number(payment.amount), 0)), `${paidPayments.length} payment paid`, true)}${statCard('PENDAPATAN DIAKUI BULAN INI', money(currentMonth), 'membership yang aktif di bulan berjalan')}${statCard('PENDAPATAN BELUM DIAKUI', money(totals.deferred), 'sisa nilai periode layanan')}</div><section class="panel report-panel"><div class="panel-header"><div><h2 class="panel-title">Pendapatan Membership</h2><p class="panel-subtitle">Setiap membership paid diakui satu bagian per bulan kalender layanan.</p></div></div><div class="table-wrap"><table><thead><tr><th>CUSTOMER</th><th>MEMBERSHIP</th><th>PERIODE LAYANAN</th><th>NILAI</th><th>PENDAPATAN / BULAN</th><th>SUDAH DIAKUI</th><th>BELUM DIAKUI</th><th>JURNAL</th></tr></thead><tbody>${reportRows.map(({ membership, plan, payment, recognized, deferred }) => `<tr><td>${escapeHtml(customerName(membership.customer_id))}</td><td>${escapeHtml(plan?.name || 'Membership')}</td><td>${date(membership.start_date)} — ${date(membership.end_date)}</td><td class="amount">${money(membership.amount)}</td><td class="amount">${money(monthlyRecognition(membership))}</td><td class="amount">${money(recognized)}</td><td class="amount">${money(deferred)}</td><td>${payment ? `<button class="table-action" data-action="view-journal" data-id="${escapeHtml(payment.id)}">Lihat jurnal</button>` : '<span class="muted-note">Belum paid</span>'}</td></tr>`).join('') || '<tr><td colspan="8"><div class="empty-state">Belum ada pendapatan yang dapat diakui.</div></td></tr>'}</tbody></table></div></section><section class="panel report-history"><div class="panel-header"><div><h2 class="panel-title">Riwayat Pengakuan Pendapatan</h2><p class="panel-subtitle">Metode bulanan: setiap bulan layanan yang terlewati mengakui satu bagian membership.</p></div></div><div class="revenue-month-list">${months.map((month) => `<div><span>${date(`${month}-01`)}</span><strong>${money(recognizedForMonth(month))}</strong></div>`).join('') || '<div class="empty-state">Belum ada periode pengakuan.</div>'}</div></section>`; }
+function recognitionSchedule(payment) {
+  if (!payment || payment.status !== 'paid') return [];
+  const membership = membershipById(payment.membership_id);
+  const duration = Number(planById(membership?.plan_id)?.duration_months || 0);
+  if (!membership || !duration) return [];
+  const startKey = monthKey(membership.start_date);
+  const endKey = monthKey(membership.end_date);
+  const servicePeriods = Math.min(duration, monthOffset(startKey, endKey) + 1);
+  const paymentKey = monthKey(payment.payment_date);
+  const firstPeriod = Math.max(monthOffset(startKey, paymentKey), 0);
+  const remainingPeriods = servicePeriods - firstPeriod;
+  if (remainingPeriods <= 0) return [];
+  const amountCents = Math.round(Number(payment.amount || 0) * 100);
+  const regularCents = Math.floor(amountCents / remainingPeriods);
+    return Array.from({ length: remainingPeriods }, (_, index) => ({
+      month: monthKey(addMonths(`${startKey}-01`, firstPeriod + index)),
+      amount: (index === remainingPeriods - 1 ? amountCents - regularCents * (remainingPeriods - 1) : regularCents) / 100
+    })).filter((period) => period.amount > 0);
+}
+function accountingRows(asOf = new Date()) {
+  const asOfDate = dateKey(asOf);
+  const asOfMonth = monthKey(asOf);
+  const rows = [];
+  const addEntry = (entryId, sourceId, entryDate, reference, description, account, debit, credit) => {
+    rows.push({ entryId, sourceId, date: entryDate, reference, description, ...account, debit, credit });
+  };
+  state.data.payments.filter((payment) => payment.status === 'paid' && payment.payment_date <= asOfDate).forEach((payment) => {
+    const membership = membershipById(payment.membership_id);
+    const revenueType = paymentRevenueType(payment);
+    const amount = Number(payment.amount || 0);
+    const service = planService(planById(membership?.plan_id));
+    const reference = payment.reference || `PAY-${String(payment.id).replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+    if (revenueType !== 'membership') {
+      const label = paymentRevenueLabel(revenueType);
+      const description = `Penerimaan ${label} - ${customerName(payment.customer_id)}`;
+      addEntry(`PAY-${payment.id}`, payment.id, payment.payment_date, reference, description, { code: '1.1.01', name: 'Kas', service: label }, amount, 0);
+      addEntry(`PAY-${payment.id}`, payment.id, payment.payment_date, reference, description, { code: '4.2.01', name: 'Pendapatan Non-Membership', service: label }, 0, amount);
+      return;
+    }
+    const description = `Penerimaan membership - ${customerName(payment.customer_id)} - ${planName(membership?.plan_id)}`;
+    addEntry(`PAY-${payment.id}`, payment.id, payment.payment_date, reference, description, { code: '1.1.01', name: 'Kas', service }, amount, 0);
+    addEntry(`PAY-${payment.id}`, payment.id, payment.payment_date, reference, description, { code: '2.1.01', name: 'Pendapatan Diterima di Muka', service }, 0, amount);
+    recognitionSchedule(payment).filter((period) => period.month <= asOfMonth && recognitionDate(period.month, membership, payment) <= asOfDate).forEach((period) => {
+      const entryId = `REV-${payment.id}-${period.month}`;
+      const entryDate = recognitionDate(period.month, membership, payment);
+      const entryDescription = `Pengakuan pendapatan membership - ${customerName(payment.customer_id)} - ${planName(membership?.plan_id)}`;
+      addEntry(entryId, payment.id, entryDate, entryId, entryDescription, { code: '2.1.01', name: 'Pendapatan Diterima di Muka', service }, period.amount, 0);
+      addEntry(entryId, payment.id, entryDate, entryId, entryDescription, { code: '4.1.01', name: 'Pendapatan Membership', service }, 0, period.amount);
+    });
+  });
+  return rows.sort((left, right) => left.date.localeCompare(right.date) || left.entryId.localeCompare(right.entryId) || left.code.localeCompare(right.code));
+}
+function recognizedToDate(membership, asOf = new Date()) {
+  const asOfDate = dateKey(asOf);
+  return state.data.payments.filter((payment) => payment.membership_id === membership?.id && payment.status === 'paid' && payment.payment_date <= asOfDate)
+    .reduce((sum, payment) => sum + recognitionSchedule(payment)
+      .filter((period) => period.month <= monthKey(asOf) && recognitionDate(period.month, membership, payment) <= asOfDate)
+      .reduce((periodTotal, period) => periodTotal + period.amount, 0), 0);
+}
+function recognizedForMonth(key) { return accountingRows().filter((row) => ['4.1.01', '4.2.01'].includes(row.code) && row.credit > 0 && monthKey(row.date) === key).reduce((sum, row) => sum + row.credit, 0); }
+function accountingTotals(asOf = new Date()) {
+  const rows = accountingRows(asOf);
+  const totalFor = (code, field) => rows.filter((row) => row.code === code).reduce((sum, row) => sum + row[field], 0);
+  const recognizedMembership = totalFor('4.1.01', 'credit') - totalFor('4.1.01', 'debit');
+  const recognizedNonMembership = totalFor('4.2.01', 'credit') - totalFor('4.2.01', 'debit');
+  return {
+    cash: totalFor('1.1.01', 'debit') - totalFor('1.1.01', 'credit'),
+    recognizedMembership,
+    recognizedNonMembership,
+    recognized: recognizedMembership + recognizedNonMembership,
+    deferred: totalFor('2.1.01', 'credit') - totalFor('2.1.01', 'debit')
+  };
+}
+function accountingSummaryMarkup() { const totals = accountingTotals(); return `<div class="accounting-strip"><div><span class="accounting-label">PENDAPATAN DIAKUI</span><strong>${money(recognizedForMonth(monthKey(new Date())))}</strong><small>Bulan berjalan</small></div><div><span class="accounting-label">KAS DITERIMA</span><strong>${money(totals.cash)}</strong><small>Akumulasi pembayaran lunas</small></div><div><span class="accounting-label">PENDAPATAN DITERIMA DI MUKA</span><strong>${money(totals.deferred)}</strong><small>Saldo kewajiban layanan</small></div></div>`; }
+function paymentJournalMarkup(payment) {
+  if (!payment || payment.status !== 'paid') return '';
+  const rows = accountingRows().filter((row) => row.sourceId === payment.id);
+  const entries = [...new Map(rows.map((row) => [row.entryId, rows.filter((entry) => entry.entryId === row.entryId)])).values()];
+  return `<section class="journal-section"><div class="eyebrow">ACCOUNTING ENTRY</div><h3>Jurnal pembayaran</h3>${entries.map((entry) => `<div class="journal-block"><strong>${escapeHtml(entry[0].description)} · ${date(entry[0].date)}</strong>${entry.map((row) => `<div><span>${row.debit ? 'Dr' : 'Cr'} ${escapeHtml(row.name)}</span><b>${money(row.debit || row.credit)}</b></div>`).join('')}</div>`).join('')}</section>`;
+}
+function paidAmountForMembership(membershipId, asOf = dateKey(new Date())) {
+  return state.data.payments.filter((payment) => payment.membership_id === membershipId && payment.status === 'paid' && payment.payment_date <= asOf)
+    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+}
+function withinPeriod(value, filters) { return (!filters.startDate || value >= filters.startDate) && (!filters.endDate || value <= filters.endDate); }
+function periodFilterMarkup(filters = state.financeFilters) {
+  return `<div class="toolbar period-filters"><label class="form-row"><span>DARI</span><input class="form-input" type="date" data-period-filter="startDate" value="${escapeHtml(filters.startDate)}"></label><label class="form-row"><span>SAMPAI</span><input class="form-input" type="date" data-period-filter="endDate" value="${escapeHtml(filters.endDate)}"></label></div>`;
+}
+function membershipIsActive(membership, asOf = new Date()) {
+  const today = dateKey(asOf);
+
+  return (
+    membership.status === 'active' &&
+    membership.start_date <= today &&
+    membership.end_date >= today
+  );
+}
+const SCHEDULED_CLASSES = ['Pilates', 'Yoga', 'Zumba', 'Functional Training'];
+const FACILITY_SERVICES = ['Gym', 'Women Only'];
+const CLASS_CAPACITY_DEFAULTS = { Pilates: 10, Yoga: 12, Zumba: 15, 'Functional Training': 12 };
+const DEMO_CLASS_TEMPLATES = [
+  { service: 'Pilates', dayOffset: -1, start_time: '08:00', end_time: '09:00', instructor: 'Sarah Wijaya', capacity: 10 },
+  { service: 'Pilates', dayOffset: 1, start_time: '08:00', end_time: '09:00', instructor: 'Sarah Wijaya', capacity: 10 },
+  { service: 'Yoga', dayOffset: 1, start_time: '10:00', end_time: '11:00', instructor: 'Maya Putri', capacity: 12 },
+  { service: 'Zumba', dayOffset: 2, start_time: '18:00', end_time: '19:00', instructor: 'Rani Pratama', capacity: 15 },
+  { service: 'Functional Training', dayOffset: 3, start_time: '16:30', end_time: '17:30', instructor: 'Arif Nugraha', capacity: 12 }
+];
+function dateWithOffset(dayOffset) {
+  const value = new Date();
+  value.setDate(value.getDate() + dayOffset);
+  return dateKey(value);
+}
+function ensureDemoClassSchedule() {
+  if (state.demoClassSessions.length) return;
+  state.demoClassSessions = DEMO_CLASS_TEMPLATES.map((template, index) => ({
+    id: `demo-class-${index + 1}`,
+    ...template,
+    session_date: dateWithOffset(template.dayOffset)
+  }));
+  seedDemoClassRegistrations();
+}
+function planAccessServices(plan) {
+  const name = String(plan?.name || '').toLowerCase();
+  if (name.includes('all access')) return [...FACILITY_SERVICES, ...SCHEDULED_CLASSES];
+  return [...FACILITY_SERVICES, ...SCHEDULED_CLASSES].filter((service) => name.includes(service.toLowerCase()));
+}
+function planAccessDescription(plan) {
+  const services = planAccessServices(plan);
+  if (!services.length) return plan?.access_label || planService(plan);
+  return services.map((service) => `${service} · ${FACILITY_SERVICES.includes(service) ? 'facility access' : 'scheduled class'}`).join(' / ');
+}
+function membershipsForClass(service, asOf = new Date()) {
+  return state.data.memberships.filter((membership) =>
+    membershipIsActive(membership, asOf) &&
+    planAccessServices(planById(membership.plan_id)).includes(service)
+  );
+}
+function registrationsForSession(sessionId) {
+  return state.demoClassRegistrations.filter((registration) => registration.session_id === sessionId && registration.status === 'registered');
+}
+function seedDemoClassRegistrations() {
+  if (!state.demoClassSessions.length) return;
+  state.demoClassRegistrations = state.demoClassSessions.flatMap((session) => {
+    const uniqueMembers = new Map();
+    membershipsForClass(session.service, localClassTime(session.session_date, session.start_time)).forEach((membership) => {
+      if (!uniqueMembers.has(membership.customer_id)) uniqueMembers.set(membership.customer_id, membership);
+    });
+    return [...uniqueMembers.values()].slice(0, Number(session.capacity)).map((membership) => ({
+      id: `${session.id}-${membership.id}`,
+      session_id: session.id,
+      membership_id: membership.id,
+      status: 'registered',
+      created_at: new Date().toISOString()
+    }));
+  });
+}
+function classSlotsAvailable(session) {
+  return Math.max(Number(session.capacity) - registrationsForSession(session.id).length, 0);
+}
+function localClassTime(dateValue, timeValue) {
+  const [hours, minutes] = timeValue.split(':').map(Number);
+  const result = new Date(`${dateValue}T00:00:00`);
+  result.setHours(hours, minutes, 0, 0);
+  return result;
+}
+function classSessionStatus(session, now = new Date()) {
+  if (localClassTime(session.session_date, session.end_time) <= now) return 'completed';
+  const registered = registrationsForSession(session.id).length;
+  const capacity = Number(session.capacity);
+  if (registered >= capacity) return 'full';
+  if (registered / capacity >= 0.9) return 'almost_full';
+  return 'available';
+}
+function classStatusLabel(status) {
+  return ({ available: 'Available', almost_full: 'Almost Full', full: 'Full', completed: 'Completed' })[status] || status;
+}
+function customerMembershipState(customerId, asOf = new Date()) {
+  const records = state.data.memberships.filter((membership) => membership.customer_id === customerId);
+  if (!records.length) return 'non_member';
+  return records.some((membership) => membershipIsActive(membership, asOf)) ? 'active' : 'expired';
+}
+function memberStatusLabel(status) {
+  return ({ active: 'Member Aktif', expired: 'Member Expired', non_member: 'Non-Member' })[status] || status;
+}
+function effectiveMembershipStatus(membership, asOf = new Date()) {
+  if (membership.status === 'cancelled') return 'Cancelled';
+  if (membershipIsActive(membership, asOf)) return 'Active';
+  if (membership.status === 'active' && membership.start_date > dateKey(asOf)) return 'Pending';
+  return 'Expired';
+}
+function classRegistrationError(session, membership) {
+  const status = classSessionStatus(session);
+  if (status === 'completed') return 'Sesi sudah selesai dan tidak menerima pendaftaran.';
+  if (status === 'full') return 'Sesi sudah penuh. Pendaftaran tambahan tidak dapat dilakukan.';
+  if (!membership) return 'Pilih membership yang akan digunakan untuk mendaftar.';
+  if (!membershipIsActive(membership, localClassTime(session.session_date, session.start_time))) return 'Membership tidak aktif pada tanggal sesi ini.';
+  if (!membershipsForClass(session.service, localClassTime(session.session_date, session.start_time)).some((item) => item.id === membership.id)) return `Membership ${planName(membership.plan_id)} tidak mencakup akses ${session.service}.`;
+  return '';
+}
+function classSessionCard(session, selected = false) {
+  const registered = registrationsForSession(session.id).length;
+  const available = classSlotsAvailable(session);
+  const status = classSessionStatus(session);
+  return `<button type="button" class="class-session-card ${selected ? 'selected' : ''}" data-action="select-class-session" data-id="${escapeHtml(session.id)}"><span class="class-session-topline"><strong>${escapeHtml(session.service)}</strong><span class="badge ${status}">${classStatusLabel(status)}</span></span><span class="class-session-date">${date(session.session_date)}</span><span class="class-session-time">${escapeHtml(session.start_time.slice(0, 5))}–${escapeHtml(session.end_time.slice(0, 5))} · ${escapeHtml(session.instructor)}</span><span class="class-session-capacity">${registered} / ${session.capacity} peserta <b>${available} slot tersedia</b></span></button>`;
+}
+function classSessionDetailMarkup(session) {
+  const registrations = state.demoClassRegistrations.filter((registration) => registration.session_id === session.id)
+    .sort((left, right) => left.created_at.localeCompare(right.created_at));
+  const registered = registrationsForSession(session.id).length;
+  const available = classSlotsAvailable(session);
+  const status = classSessionStatus(session);
+  const sessionMemberships = state.data.memberships.filter((membership) => membershipIsActive(membership, localClassTime(session.session_date, session.start_time)));
+  const registrationOptions = sessionMemberships.map((membership) => {
+    const eligible = planAccessServices(planById(membership.plan_id)).includes(session.service);
+    return `<option value="${escapeHtml(membership.id)}">${escapeHtml(customerName(membership.customer_id))} · ${escapeHtml(planName(membership.plan_id))}${eligible ? '' : ' · Tidak termasuk akses'}</option>`;
+  }).join('');
+  return `<aside class="panel class-session-detail"><div class="panel-header"><div><h2 class="panel-title">${escapeHtml(session.service)} · ${escapeHtml(session.start_time.slice(0, 5))}–${escapeHtml(session.end_time.slice(0, 5))}</h2><p class="panel-subtitle">${date(session.session_date)} · ${escapeHtml(session.instructor)}</p></div><span class="badge ${status}">${classStatusLabel(status)}</span></div><div class="class-session-facts"><div><span>Instructor</span><strong>${escapeHtml(session.instructor)}</strong></div><div><span>Kapasitas</span><strong>${session.capacity}</strong></div><div><span>Peserta</span><strong>${registered}</strong></div><div><span>Slot tersedia</span><strong>${available}</strong></div></div>${status === 'available' || status === 'almost_full' ? `<form id="classRegistrationForm" data-session-id="${escapeHtml(session.id)}" class="class-registration-form"><label class="form-row"><span>MEMBERSHIP</span><select class="select-input" name="membership_id" ${sessionMemberships.length ? 'required' : 'disabled'}><option value="">Pilih membership</option>${registrationOptions}</select></label><button class="primary-button" type="submit" ${sessionMemberships.length ? '' : 'disabled'}>Daftarkan member</button></form>` : `<p class="class-session-notice">${status === 'full' ? 'Kapasitas sesi telah tercapai.' : 'Sesi yang sudah lewat tidak menerima pendaftaran baru.'}</p>`}<section class="class-participants"><div class="class-participants-heading"><h3>Daftar Peserta</h3><span>${registered} terdaftar</span></div>${registrations.length ? `<ol>${registrations.map((registration) => { const membership = membershipById(registration.membership_id); const statusLabel = registration.status === 'registered' ? 'Registered' : 'Cancelled'; return `<li><div><strong>${escapeHtml(customerName(membership?.customer_id))}</strong><span>${escapeHtml(planName(membership?.plan_id))}</span></div><span class="badge ${registration.status === 'registered' ? 'active' : 'cancelled'}">${statusLabel}</span>${registration.status === 'registered' ? `<button class="table-action danger" type="button" data-action="cancel-class-registration" data-id="${escapeHtml(registration.id)}">Batalkan</button>` : ''}</li>`; }).join('')}</ol>` : '<div class="empty-state">Belum ada peserta terdaftar.</div>'}</section></aside>`;
+}
+function classSessionFormMarkup() {
+  const today = dateKey(new Date());
+  return `<section class="panel class-session-create"><div class="panel-header"><div><h2 class="panel-title">Buat Sesi</h2><p class="panel-subtitle">Jadwalkan group class FORMÉ.</p></div></div><form id="classSessionForm" class="class-session-form"><label class="form-row"><span>CLASS</span><select class="select-input" name="service" required>${SCHEDULED_CLASSES.map((service) => `<option value="${service}">${service}</option>`).join('')}</select></label><label class="form-row"><span>TANGGAL</span><input class="form-input" type="date" name="session_date" min="${today}" value="${today}" required></label><label class="form-row"><span>MULAI</span><input class="form-input" type="time" name="start_time" required></label><label class="form-row"><span>SELESAI</span><input class="form-input" type="time" name="end_time" required></label><label class="form-row"><span>INSTRUCTOR</span><input class="form-input" name="instructor" maxlength="120" required></label><label class="form-row"><span>KAPASITAS</span><input class="form-input" type="number" name="capacity" min="1" value="${CLASS_CAPACITY_DEFAULTS.Pilates}" required></label><button class="primary-button" type="submit">Simpan sesi</button></form></section>`;
+}
+function renderClassSchedule() {
+  ensureDemoClassSchedule();
+  const filters = state.classFilters;
+  const sessions = state.demoClassSessions.filter((session) =>
+    (filters.service === 'all' || session.service === filters.service) &&
+    (!filters.date || session.session_date === filters.date) &&
+    (filters.status === 'all' || classSessionStatus(session) === filters.status)
+  ).sort((left, right) => left.session_date.localeCompare(right.session_date) || left.start_time.localeCompare(right.start_time));
+  const selected = sessions.find((session) => session.id === state.selectedClassSessionId) || sessions[0];
+  return `<div class="page-heading"><div><div class="eyebrow">STUDIO OPERATIONS / DEMO</div><h1>Class Schedule</h1><p>Jadwal dan pendaftaran simulasi di browser. Nama peserta berasal dari membership yang termuat; tidak disimpan ke Supabase.</p></div><button class="primary-button" data-action="toggle-class-session-form">${state.showClassSessionForm ? 'Tutup form' : '+ Buat sesi demo'}</button></div><div class="toolbar class-schedule-filters"><label class="form-row"><span>CLASS</span><select class="select-input" data-class-filter="service"><option value="all">Semua Class</option>${SCHEDULED_CLASSES.map((service) => `<option value="${service}" ${filters.service === service ? 'selected' : ''}>${service}</option>`).join('')}</select></label><label class="form-row"><span>TANGGAL</span><input class="form-input" type="date" data-class-filter="date" value="${escapeHtml(filters.date)}"></label><label class="form-row"><span>STATUS</span><select class="select-input" data-class-filter="status"><option value="all">Semua</option>${['available', 'almost_full', 'full', 'completed'].map((status) => `<option value="${status}" ${filters.status === status ? 'selected' : ''}>${classStatusLabel(status)}</option>`).join('')}</select></label></div>${state.showClassSessionForm ? classSessionFormMarkup() : ''}<div class="class-schedule-layout"><section class="class-session-list">${sessions.length ? sessions.map((session) => classSessionCard(session, session.id === selected?.id)).join('') : '<div class="panel empty-state">Belum ada sesi yang sesuai filter.</div>'}</section>${selected ? classSessionDetailMarkup(selected) : '<aside class="panel class-session-detail"><div class="empty-state">Pilih sesi untuk melihat detail dan daftar peserta.</div></aside>'}</div>`;
+}
+function saveClassSession(event) {
+  event.preventDefault();
+  const form = event.target;
+  const body = Object.fromEntries(new FormData(form).entries());
+  body.capacity = Number(body.capacity);
+  if (!SCHEDULED_CLASSES.includes(body.service) || !body.session_date || !body.start_time || !body.end_time || !body.instructor || !Number.isInteger(body.capacity) || body.capacity < 1) {
+    showToast('Lengkapi jadwal, instructor, dan kapasitas sesi dengan benar.', true);
+    return;
+  }
+  if (body.end_time <= body.start_time) { showToast('Jam selesai harus setelah jam mulai.', true); return; }
+  if (body.session_date < dateKey(new Date())) { showToast('Tanggal sesi tidak boleh di masa lalu.', true); return; }
+  const session = { ...body, id: `demo-session-${Date.now()}` };
+  state.demoClassSessions = [...state.demoClassSessions, session];
+  state.selectedClassSessionId = session.id;
+  state.showClassSessionForm = false;
+  render();
+  showToast('Sesi demo ditambahkan di browser ini.');
+}
+function registerForClass(event) {
+  event.preventDefault();
+  const session = state.demoClassSessions.find((item) => item.id === event.target.dataset.sessionId);
+  const membership = membershipById(new FormData(event.target).get('membership_id'));
+  if (!session) { showToast('Sesi tidak ditemukan.', true); return; }
+  const registrationError = classRegistrationError(session, membership);
+  if (registrationError) { showToast(registrationError, true); return; }
+  const existing = state.demoClassRegistrations.find((registration) => registration.session_id === session.id && registration.membership_id === membership.id);
+  if (existing?.status === 'registered') { showToast('Membership ini sudah terdaftar pada sesi tersebut.', true); return; }
+  const registration = existing
+    ? { ...existing, status: 'registered', created_at: new Date().toISOString() }
+    : { id: `demo-registration-${Date.now()}`, session_id: session.id, membership_id: membership.id, status: 'registered', created_at: new Date().toISOString() };
+  state.demoClassRegistrations = existing
+    ? state.demoClassRegistrations.map((item) => item.id === existing.id ? registration : item)
+    : [...state.demoClassRegistrations, registration];
+  state.selectedClassSessionId = session.id;
+  render();
+  showToast('Pendaftaran demo diperbarui di browser ini.');
+}
+function cancelClassRegistration(registrationId) {
+  const registration = state.demoClassRegistrations.find((item) => item.id === registrationId);
+  if (!registration || registration.status !== 'registered') return;
+  state.demoClassRegistrations = state.demoClassRegistrations.map((item) => item.id === registrationId ? { ...item, status: 'cancelled' } : item);
+  state.selectedClassSessionId = registration.session_id;
+  render();
+  showToast('Pendaftaran demo dibatalkan; slot diperbarui di browser ini.');
+}
+function revenueTrendMarkup() {
+  const current = monthStart(monthKey(new Date()));
+  const months = Array.from({ length: 6 }, (_, index) => {
+    const month = new Date(current);
+    month.setMonth(month.getMonth() - 5 + index);
+    return monthKey(month);
+  });
+  const values = months.map((month) => ({ month, amount: recognizedForMonth(month) }));
+  const maximum = Math.max(...values.map((item) => item.amount), 0);
+  return `<section class="panel"><div class="panel-header"><div><h2 class="panel-title">Revenue Trend</h2><p class="panel-subtitle">Pendapatan membership yang diakui per bulan</p></div><button class="text-button" data-view="reports">Laporan →</button></div><div class="chart-scroll"><div class="revenue-chart">${values.map(({ month, amount }) => `<div class="revenue-bar"><div class="revenue-bar-track"><span style="height:${maximum ? Math.max(amount ? 5 : 0, amount / maximum * 100) : 0}%"></span></div><strong>${money(amount)}</strong><small>${new Intl.DateTimeFormat('id-ID', { month: 'short' }).format(monthStart(month))}</small></div>`).join('')}</div></div></section>`;
+}
+function membershipOverviewMarkup() {
+  const today = dateKey(new Date());
+
+  const activeMemberships = state.data.memberships.filter(
+    (membership) =>
+      membership.status === 'active' &&
+      membership.start_date <= today &&
+      membership.end_date >= today
+  );
+
+  const counts = activeMemberships.reduce((totals, membership) => {
+    totals.set(
+      membership.plan_id,
+      (totals.get(membership.plan_id) || 0) + 1
+    );
+    return totals;
+  }, new Map());
+
+  const plans = state.data.plans.filter((plan) => counts.has(plan.id));
+
+  return `
+    <section class="panel membership-overview-panel">
+      <div class="panel-header">
+        <div>
+          <h2 class="panel-title">Membership Overview</h2>
+          <p class="panel-subtitle">Member aktif berdasarkan paket</p>
+        </div>
+        <button class="text-button" data-action="view-active-memberships">
+          View all memberships →
+        </button>
+      </div>
+
+      ${
+        plans.length
+          ? `
+            <div class="plan-list membership-overview-list">
+              ${plans
+                .map(
+                  (plan) => `
+                    <div class="plan-row">
+                      <div>
+                        <div class="plan-name">
+                          ${escapeHtml(plan.name)}
+                        </div>
+                        <span class="plan-meta">
+                          ${escapeHtml(planAccessDescription(plan))}
+                        </span>
+                      </div>
+
+                      <div class="plan-total">
+                        ${counts.get(plan.id)}
+                        <small>member aktif</small>
+                      </div>
+                    </div>
+                  `
+                )
+                .join('')}
+            </div>
+          `
+          : '<div class="empty-state">Belum ada membership aktif.</div>'
+      }
+    </section>
+  `;
+}
+function expiringMembershipMarkup() {
+  const today = dateKey(new Date());
+  const limit = new Date(`${today}T00:00:00`);
+  limit.setDate(limit.getDate() + 30);
+  const limitDate = dateKey(limit);
+  const ending = state.data.memberships.filter((membership) => membershipIsActive(membership) && membership.end_date <= limitDate)
+    .sort((left, right) => left.end_date.localeCompare(right.end_date));
+  return `<section class="panel expiring-membership-panel"><div class="panel-header"><div><h2 class="panel-title">Segera Berakhir</h2><p class="panel-subtitle">Membership aktif dalam 30 hari</p></div><button class="text-button" data-action="view-active-memberships">Lihat semua →</button></div>${ending.length ? `<div class="active-membership-list">${ending.map((membership) => { const daysRemaining = Math.max(0, Math.round((new Date(`${membership.end_date}T00:00:00`) - new Date(`${today}T00:00:00`)) / 86400000)); return `<div class="active-membership-row"><div class="customer"><span class="customer-avatar">${initials(customerName(membership.customer_id))}</span><div><span class="customer-name">${escapeHtml(customerName(membership.customer_id))}</span><span class="customer-id">${escapeHtml(planName(membership.plan_id))}</span></div></div><span class="service-label">Berakhir: ${date(membership.end_date)}</span><span class="badge pending">${daysRemaining} hari lagi</span></div>`; }).join('')}</div>` : '<div class="empty-state">Tidak ada membership yang segera berakhir.</div>'}</section>`;
+}
+function renderOverview() {
+  const { customers, memberships, payments, plans } = state.data;
+  const today = dateKey(new Date());
+  const currentMonth = monthKey(new Date());
+  const active = memberships.filter(
+  (membership) =>
+    membership.status === 'active' &&
+    membership.start_date <= today &&
+    membership.end_date >= today
+);
+  const newMemberships = memberships.filter((membership) => membership.start_date <= today && monthKey(membership.start_date) === currentMonth).length;
+  const paidThisMonth = payments.filter((payment) => payment.status === 'paid' && payment.payment_date <= today && monthKey(payment.payment_date) === currentMonth);
+  const cashThisMonth = paidThisMonth.reduce((sum, payment) => sum + Number(payment.amount), 0);
+  const recognizedThisMonth = recognizedForMonth(currentMonth);
+  const totals = accountingTotals();
+  const limit = new Date(`${today}T00:00:00`);
+  limit.setDate(limit.getDate() + 30);
+  const expiringCount = memberships.filter((membership) => membershipIsActive(membership) && membership.end_date <= dateKey(limit)).length;
+  const expiredCount = memberships.filter((membership) => membership.status === 'expired' || membership.status === 'active' && membership.end_date < today).length;
+  const paidTransactionCount = payments.filter((payment) => payment.status === 'paid' && payment.payment_date <= today).length;
+  const recentPayments = [...payments].sort((left, right) => right.payment_date.localeCompare(left.payment_date)).slice(0, 5);
+  return `<div class="page-heading"><div><div class="eyebrow">FORME / FINANCIAL OVERVIEW</div><h1>Dashboard</h1><p>Aktivitas member dan posisi keuangan studio.</p></div><div class="date-chip">${date(today)}</div></div><div class="stats-grid dashboard-stat-grid">${statCard('ACTIVE MEMBERS', new Set(active.map((membership) => membership.customer_id)).size, `${active.length} kontrak aktif`, true)}${statCard('NEW MEMBERSHIPS', newMemberships, 'mulai pada bulan ini')}${statCard('EXPIRING SOON', expiringCount, 'berakhir dalam 30 hari')}${statCard('EXPIRED MEMBERSHIPS', expiredCount, 'status atau tanggal akhir')}${statCard('CASH RECEIVED', money(totals.cash), `${paidTransactionCount} transaksi lunas`)}${statCard('RECOGNIZED REVENUE', money(recognizedThisMonth), 'diakui bulan berjalan')}${statCard('UNEARNED REVENUE', money(totals.deferred), 'saldo kewajiban layanan')}${statCard('PAID TRANSACTIONS', paidTransactionCount, 'penerimaan sampai hari ini')}</div><div class="dashboard-secondary-grid">${revenueTrendMarkup()}${membershipOverviewMarkup()}</div><div class="content-grid"><section class="panel"><div class="panel-header"><div><h2 class="panel-title">Recent Payments</h2><p class="panel-subtitle">Pembayaran membership terbaru</p></div><button class="text-button" data-view="payments">Lihat semua →</button></div>${paymentTable(recentPayments, true)}</section>${expiringMembershipMarkup()}</div><section class="panel dashboard-plans"><div class="panel-header"><div><h2 class="panel-title">Membership Plans</h2><p class="panel-subtitle">Paket aktif dari katalog Supabase</p></div><button class="text-button" data-view="plans">Lihat semua →</button></div><div class="plan-list">${plans.filter((plan) => plan.is_active !== false).slice(0, 6).map((plan) => `<div class="plan-row"><div><div class="plan-name">${escapeHtml(plan.name)}</div><span class="plan-meta">${durationLabel(plan.duration_months)} · ${escapeHtml(planAccessDescription(plan))}</span></div><div class="plan-total">${money(plan.price)}<small>${memberships.filter((membership) => membership.plan_id === plan.id).length} kontrak</small></div></div>`).join('') || '<div class="empty-state">Belum ada membership plan.</div>'}</div></section>`;
+}
+function paymentTable(rows, compact = false) { if (!rows.length) return '<div class="empty-state">Belum ada pembayaran.</div>'; return `<div class="table-wrap"><table><thead><tr><th>TANGGAL</th><th>REFERENSI</th><th>CUSTOMER</th><th>MEMBERSHIP / TIPE</th><th>NOMINAL</th><th>METODE</th><th>STATUS</th>${compact ? '' : '<th>AKSI</th>'}</tr></thead><tbody>${rows.map((item) => { const kind = paymentRevenueType(item); const membership = membershipById(item.membership_id); return `<tr><td>${date(item.payment_date)}</td><td class="amount">${escapeHtml(item.reference || 'Tanpa referensi')}</td><td><div class="customer"><span class="customer-avatar">${initials(customerName(item.customer_id))}</span><span class="customer-name">${escapeHtml(customerName(item.customer_id))}</span></div></td><td>${kind === 'membership' ? escapeHtml(planName(membership?.plan_id)) : escapeHtml(paymentRevenueLabel(kind))}</td><td class="amount">${money(item.amount)}</td><td>${paymentMethodLabel(item.payment_method)}</td><td><span class="badge ${item.status}">${statusLabel(item.status)}</span></td>${compact ? '' : `<td>${actionButtons('payment', item.id)}</td>`}</tr>`; }).join('')}</tbody></table></div>`; }
+function customerTable(customers) {
+  if (!customers.length) return '<div class="empty-state">Belum ada customer yang sesuai filter.</div>';
+  return `<div class="table-wrap"><table><thead><tr><th>CUSTOMER</th><th>TIPE</th><th>MEMBERSHIP / PLAN</th><th>PERIODE MEMBERSHIP</th><th>STATUS</th><th>AKSI</th></tr></thead><tbody>${customers.map((customer) => {
+    const memberships = state.data.memberships.filter((membership) => membership.customer_id === customer.id)
+      .sort((left, right) => right.start_date.localeCompare(left.start_date));
+    const memberState = customerMembershipState(customer.id);
+    const membershipDetails = memberships.map((membership) => {
+      const status = effectiveMembershipStatus(membership);
+      return `<div class="customer-membership-item"><div><strong>${escapeHtml(planName(membership.plan_id))}</strong><small>${date(membership.start_date)} — ${date(membership.end_date)}</small></div><span class="badge ${status.toLowerCase()}">${status}</span><div class="membership-row-actions">${actionButtons('membership', membership.id)}</div></div>`;
+    }).join('');
+    const status = memberships.length ? memberships.map((membership) => `<span class="badge ${effectiveMembershipStatus(membership).toLowerCase()}">${effectiveMembershipStatus(membership)}</span>`).join(' ') : '<span class="badge">Non-member</span>';
+    return `<tr><td><div class="customer"><span class="customer-avatar">${initials(customer.full_name)}</span><div><span class="customer-name">${escapeHtml(customer.full_name)}</span><span class="customer-id">${escapeHtml(customer.member_code)} · ${escapeHtml(customer.email || customer.phone || 'Tanpa kontak')}</span><span class="customer-note">Bergabung ${date(customer.join_date)}${customer.notes ? ` · ${escapeHtml(customer.notes)}` : ''}</span></div></div></td><td><span class="badge ${memberState}">${memberStatusLabel(memberState)}</span></td><td>${membershipDetails || '<span class="muted-note">Belum pernah memiliki membership</span>'}</td><td>${memberships.length ? memberships.map((membership) => `<div class="membership-period-item">${date(membership.start_date)} — ${date(membership.end_date)}</div>`).join('') : '-'}</td><td>${status}</td><td>${actionButtons('customer', customer.id)}</td></tr>`;
+  }).join('')}</tbody></table></div>`;
+}
+function visibleCustomers() {
+  const query = state.customerSearch.trim().toLowerCase();
+  return state.data.customers.filter((customer) => {
+    const memberState = customerMembershipState(customer.id);
+    const matchesFilter = state.customerFilter === 'all' || state.customerFilter === memberState;
+    const membershipText = state.data.memberships.filter((membership) => membership.customer_id === customer.id).map((membership) => planName(membership.plan_id)).join(' ');
+    const searchable = `${customer.full_name} ${customer.member_code} ${customer.email} ${customer.phone} ${customer.notes} ${membershipText}`.toLowerCase();
+    return matchesFilter && (!query || searchable.includes(query));
+  });
+}
+function membershipTable(items) {
+  if (!items.length) return '<div class="empty-state">Belum ada membership.</div>';
+  return `<div class="table-wrap"><table><thead><tr><th>PELANGGAN</th><th>PAKET</th><th>SERVICE</th><th>PERIODE</th><th>NOMINAL</th><th>STATUS MEMBERSHIP</th><th>STATUS PAYMENT</th><th>AKSI</th></tr></thead><tbody>${items.map((item) => {
+    const plan = planById(item.plan_id);
+    const today = dateKey(new Date());
+    const status = item.status === 'active' && item.end_date < today ? 'expired' : item.status === 'active' && item.start_date > today ? 'pending' : item.status;
+    const paid = paidAmountForMembership(item.id);
+    const paymentStatus = paid <= 0 ? 'Belum dibayar' : paid + 0.005 >= Number(item.amount) ? 'Lunas' : 'Sebagian';
+    const paymentBadge = paid <= 0 ? 'pending' : paymentStatus === 'Lunas' ? 'paid' : 'pending';
+    return `<tr><td><div class="customer"><span class="customer-avatar">${initials(customerName(item.customer_id))}</span><span class="customer-name">${escapeHtml(customerName(item.customer_id))}</span></div></td><td>${escapeHtml(planName(item.plan_id))}</td><td>${escapeHtml(planService(plan))}</td><td>${date(item.start_date)} — ${date(item.end_date)}</td><td class="amount">${money(item.amount)}</td><td><span class="badge ${status}">${status}</span></td><td><span class="badge ${paymentBadge}">${paymentStatus}</span></td><td>${actionButtons('membership', item.id)}</td></tr>`;
+  }).join('')}</tbody></table></div>`;
+}
+function filteredMemberships() {
+  const today = dateKey(new Date());
+  const query = state.membershipSearch.trim().toLowerCase();
+  return state.data.memberships.filter((membership) => {
+    if (state.membershipFilter === 'active' && !membershipIsActive(membership)) return false;
+    if (state.membershipFilter === 'expired' && membership.status !== 'expired' && !(membership.status === 'active' && membership.end_date < today)) return false;
+    if (state.membershipFilter === 'pending' && membership.status !== 'pending' && !(membership.status === 'active' && membership.start_date > today)) return false;
+    if (!['all', 'active', 'expired', 'pending'].includes(state.membershipFilter) && membership.status !== state.membershipFilter) return false;
+    return !query || `${customerName(membership.customer_id)} ${planName(membership.plan_id)} ${planService(planById(membership.plan_id))}`.toLowerCase().includes(query);
+  });
+}
+function renderMembers() { return `<div class="page-heading"><div><div class="eyebrow">CUSTOMER DIRECTORY / 02</div><h1>Customer &amp; Membership</h1><p>Customer tetap tercatat meskipun belum memiliki membership.</p><div class="customer-page-actions"><button class="primary-button" data-action="add-customer">+ Tambah customer</button><button class="secondary-button" data-action="add-membership">+ Tambah membership</button></div></div></div><div class="toolbar customer-filters"><select class="select-input" id="customerFilter"><option value="all" ${state.customerFilter === 'all' ? 'selected' : ''}>Semua Customer</option><option value="active" ${state.customerFilter === 'active' ? 'selected' : ''}>Member Aktif</option><option value="expired" ${state.customerFilter === 'expired' ? 'selected' : ''}>Member Expired</option><option value="non_member" ${state.customerFilter === 'non_member' ? 'selected' : ''}>Non-Member</option></select><input class="search-input" id="customerSearch" placeholder="Cari nama, kode, kontak, atau plan..." value="${escapeHtml(state.customerSearch)}"></div><section class="panel" id="customerPanel">${customerTable(visibleCustomers())}</section>`; }
+function renderMemberships() {
+  const filtered = filteredMemberships();
+  return `<div class="page-heading"><div><div class="eyebrow">MEMBERSHIP REGISTER / 03</div><h1>Active Memberships</h1><p>Kontrak layanan berdasarkan status dan periode membership.</p></div><button class="primary-button" data-action="add-membership">+ Tambah membership</button></div><div class="toolbar membership-toolbar"><select class="select-input" id="membershipStatusFilter"><option value="active" ${state.membershipFilter === 'active' ? 'selected' : ''}>Aktif</option><option value="all" ${state.membershipFilter === 'all' ? 'selected' : ''}>Semua status</option><option value="expired" ${state.membershipFilter === 'expired' ? 'selected' : ''}>Berakhir</option><option value="pending" ${state.membershipFilter === 'pending' ? 'selected' : ''}>Pending</option><option value="cancelled" ${state.membershipFilter === 'cancelled' ? 'selected' : ''}>Dibatalkan</option></select><input class="search-input" id="membershipSearch" placeholder="Cari customer, plan, atau service..." value="${escapeHtml(state.membershipSearch)}"></div><section class="panel" id="membershipPanel">${membershipTable(filtered)}</section>`;
+}
+function renderPayments() {
+  const filters = state.paymentFilters;
+  const payments = state.data.payments.filter((payment) => withinPeriod(payment.payment_date, filters) && (!filters.method || payment.payment_method === filters.method) && (!filters.status || payment.status === filters.status));
+  payments.sort((left, right) => right.payment_date.localeCompare(left.payment_date));
+  return `<div class="page-heading"><div><div class="eyebrow">REVENUE REGISTER / 04</div><h1>Payments</h1><p>Riwayat penerimaan kas untuk membership.</p></div><button class="primary-button" data-action="add-payment">+ Catat payment</button></div><div class="toolbar payment-filters"><label class="form-row"><span>DARI</span><input class="form-input" type="date" data-payment-filter="startDate" value="${escapeHtml(filters.startDate)}"></label><label class="form-row"><span>SAMPAI</span><input class="form-input" type="date" data-payment-filter="endDate" value="${escapeHtml(filters.endDate)}"></label><label class="form-row"><span>METODE</span><select class="select-input" data-payment-filter="method"><option value="">Semua</option>${['cash', 'transfer', 'qris'].map((method) => `<option value="${method}" ${filters.method === method ? 'selected' : ''}>${paymentMethodLabel(method)}</option>`).join('')}</select></label><label class="form-row"><span>STATUS</span><select class="select-input" data-payment-filter="status"><option value="">Semua</option>${['paid', 'pending', 'refunded'].map((status) => `<option value="${status}" ${filters.status === status ? 'selected' : ''}>${statusLabel(status)}</option>`).join('')}</select></label></div><section class="panel payment-history-panel"><div class="panel-header"><div><h2 class="panel-title">Payment History</h2><p class="panel-subtitle">${payments.length} dari ${state.data.payments.length} transaksi</p></div></div>${paymentTable(payments)}</section>`;
+}
+function renderPlans() { const services = ['Gym', 'Pilates', 'Yoga', 'Zumba', 'Functional Training', 'Women Only', 'All Access']; const filtered = state.data.plans.filter((plan) => (!state.planFilters.service || planService(plan) === state.planFilters.service) && (!state.planFilters.duration || durationLabel(plan.duration_months) === state.planFilters.duration)); return `<div class="page-heading"><div><div class="eyebrow">MASTER DATA / 05</div><h1>Membership Plans</h1><p>Plan aktual dari membership_plans untuk pencatatan kontrak.</p></div></div><div class="plans-toolbar"><select class="select-input" id="planServiceFilter"><option value="">All services</option>${services.map((service) => `<option value="${service}" ${state.planFilters.service === service ? 'selected' : ''}>${service}</option>`).join('')}</select><select class="select-input" id="planDurationFilter"><option value="">All durations</option>${['Monthly', 'Quarterly', 'Annual'].map((duration) => `<option value="${duration}" ${state.planFilters.duration === duration ? 'selected' : ''}>${duration}</option>`).join('')}</select></div><section class="panel"><div class="panel-header"><div><h2 class="panel-title">Available Plans</h2><p class="panel-subtitle">${filtered.length} dari ${state.data.plans.length} paket</p></div></div><div class="plan-list">${filtered.map((plan) => `<div class="plan-row plan-row-detailed"><div><div class="plan-name">${escapeHtml(plan.name)}</div><span class="plan-meta"><span class="plan-service-label">${escapeHtml(planService(plan))}</span> · ${durationLabel(plan.duration_months)}</span><span class="plan-access">${escapeHtml(planAccessDescription(plan))}</span></div><div class="plan-total">${money(plan.price)}<small>${state.data.memberships.filter((item) => item.plan_id === plan.id).length} pelanggan · ${plan.is_active === false ? 'Inactive' : 'Active'}</small></div></div>`).join('') || '<div class="empty-state">Tidak ada plan yang sesuai filter.</div>'}</div></section>`; }
+function reportPaymentForMembership(membershipId, asOf = dateKey(new Date())) { return state.data.payments.find((payment) => payment.membership_id === membershipId && payment.status === 'paid' && payment.payment_date <= asOf); }
+function renderRevenueReport() {
+  const today = dateKey(new Date());
+  const reportDate = state.financeFilters.endDate && state.financeFilters.endDate < today ? state.financeFilters.endDate : today;
+  const asOf = new Date(`${reportDate}T23:59:59`);
+  const allRows = accountingRows(asOf);
+  const periodRows = allRows.filter((row) => withinPeriod(row.date, state.financeFilters));
+  const paidPayments = state.data.payments.filter((payment) => payment.status === 'paid' && withinPeriod(payment.payment_date, state.financeFilters) && payment.payment_date <= reportDate);
+  const cashReceived = paidPayments.reduce((sum, payment) => sum + Number(payment.amount), 0);
+  const revenueCodes = ['4.1.01', '4.2.01'];
+  const recognized = periodRows.filter((row) => revenueCodes.includes(row.code) && row.credit > 0).reduce((sum, row) => sum + row.credit, 0);
+  const totalsAtEnd = accountingTotals(asOf);
+  const revenueByService = new Map();
+  periodRows.filter((row) => revenueCodes.includes(row.code) && row.credit > 0).forEach((row) => revenueByService.set(row.service, (revenueByService.get(row.service) || 0) + row.credit));
+  const services = ['Gym', 'Pilates', 'Yoga', 'Zumba', 'Functional Training', 'Women Only', 'All Access', 'Trial', 'Day Pass', 'Non-Membership', 'Other'];
+  const reportRows = state.data.memberships.filter((membership) => paidAmountForMembership(membership.id, reportDate) > 0 && (!state.financeFilters.startDate || membership.end_date >= state.financeFilters.startDate) && (!state.financeFilters.endDate || membership.start_date <= reportDate)).map((membership) => {
+    const plan = planById(membership.plan_id);
+    const payment = reportPaymentForMembership(membership.id, reportDate);
+    const received = paidAmountForMembership(membership.id, reportDate);
+    const recognizedToPeriod = recognizedToDate(membership, asOf);
+    return { membership, plan, payment, received, recognized: recognizedToPeriod, deferred: Math.max(received - recognizedToPeriod, 0) };
+  });
+  const months = [...new Set(periodRows.filter((row) => revenueCodes.includes(row.code) && row.credit > 0).map((row) => monthKey(row.date)))].sort();
+  const transactionCount = new Set(paidPayments.map((payment) => payment.id)).size;
+  return `<div class="page-heading"><div><div class="eyebrow">REVENUE RECOGNITION / FINANCE</div><h1>Revenue &amp; Reports</h1><p>Laporan pendapatan membership dan non-membership pada periode terpilih.</p></div></div>${periodFilterMarkup()}<div class="report-summary-grid">${statCard('PAID TRANSACTIONS', transactionCount, 'dalam periode terpilih', true)}${statCard('CASH RECEIVED', money(cashReceived), 'payment lunas dalam periode')}${statCard('TOTAL RECOGNIZED REVENUE', money(recognized), 'membership + non-membership')}${statCard('UNEARNED REVENUE', money(totalsAtEnd.deferred), `saldo per ${date(reportDate)}`)}</div><section class="panel report-panel"><div class="panel-header"><div><h2 class="panel-title">Revenue by Service &amp; Type</h2><p class="panel-subtitle">Membership recognition serta penerimaan langsung trial/day pass.</p></div></div><div class="table-wrap"><table><thead><tr><th>JENIS LAYANAN / TRANSAKSI</th><th>KODE AKUN</th><th>AKUN</th><th>PENDAPATAN DIAKUI</th></tr></thead><tbody>${services.map((service) => { const nonMembership = ['Trial', 'Day Pass', 'Non-Membership'].includes(service); return `<tr><td>${service}</td><td>${nonMembership ? '4.2.01' : '4.1.01'}</td><td>${nonMembership ? 'Pendapatan Non-Membership' : 'Pendapatan Membership'}</td><td class="amount">${money(revenueByService.get(service) || 0)}</td></tr>`; }).join('')}<tr><td colspan="3"><strong>TOTAL RECOGNIZED REVENUE</strong></td><td class="amount"><strong>${money(recognized)}</strong></td></tr></tbody></table></div></section><section class="panel report-history"><div class="panel-header"><div><h2 class="panel-title">Revenue by Period</h2><p class="panel-subtitle">Total pengakuan dari akun membership dan non-membership.</p></div></div><div class="revenue-month-list">${months.map((month) => `<div><span>${date(`${month}-01`)}</span><strong>${money(periodRows.filter((row) => revenueCodes.includes(row.code) && row.credit > 0 && monthKey(row.date) === month).reduce((sum, row) => sum + row.credit, 0))}</strong></div>`).join('') || '<div class="empty-state">Belum ada pendapatan yang diakui pada periode ini.</div>'}</div></section><section class="panel report-panel"><div class="panel-header"><div><h2 class="panel-title">Membership Revenue Detail</h2><p class="panel-subtitle">Kontrak, penerimaan kas, pendapatan terakui, dan saldo diterima di muka.</p></div></div><div class="table-wrap"><table><thead><tr><th>CUSTOMER</th><th>MEMBERSHIP</th><th>PERIODE LAYANAN</th><th>NILAI KONTRAK</th><th>DITERIMA</th><th>PENDAPATAN / BULAN</th><th>SUDAH DIAKUI</th><th>DITERIMA DI MUKA</th><th>JURNAL</th></tr></thead><tbody>${reportRows.map(({ membership, plan, payment, received, recognized: recognizedAmount, deferred }) => `<tr><td>${escapeHtml(customerName(membership.customer_id))}</td><td>${escapeHtml(plan?.name || 'Membership')}</td><td>${date(membership.start_date)} — ${date(membership.end_date)}</td><td class="amount">${money(membership.amount)}</td><td class="amount">${money(received)}</td><td class="amount">${money(monthlyRecognition(membership))}</td><td class="amount">${money(recognizedAmount)}</td><td class="amount">${money(deferred)}</td><td>${payment ? `<button class="table-action" data-action="view-journal" data-id="${escapeHtml(payment.id)}">Lihat jurnal</button>` : '<span class="muted-note">Belum paid</span>'}</td></tr>`).join('') || '<tr><td colspan="9"><div class="empty-state">Tidak ada membership berbayar pada periode ini.</div></td></tr>'}</tbody></table></div><div class="panel-header"><div><h2 class="panel-title">Non-Membership Transactions</h2><p class="panel-subtitle">Penerimaan trial dan day pass yang diakui langsung.</p></div></div>${paymentTable(state.data.payments.filter((payment) => payment.payment_date <= reportDate && withinPeriod(payment.payment_date, state.financeFilters) && payment.status === 'paid' && paymentRevenueType(payment) !== 'membership'))}</section>`;
+}
+function renderJournal() {
+  const rows = accountingRows().filter((row) => withinPeriod(row.date, state.financeFilters));
+  const transactionCount = new Set(rows.map((row) => row.entryId)).size;
+  return `<div class="page-heading"><div><div class="eyebrow">FINANCE / JOURNAL</div><h1>Journal</h1><p>Jurnal sistem dari penerimaan payment dan pengakuan pendapatan bulanan.</p></div></div>${periodFilterMarkup()}<section class="panel"><div class="panel-header"><div><h2 class="panel-title">Jurnal Umum</h2><p class="panel-subtitle">Setiap transaksi otomatis berpasangan dan seimbang.</p></div><span class="record-count">${transactionCount} transaksi</span></div>${rows.length ? `<div class="table-wrap"><table><thead><tr><th>TANGGAL</th><th>NOMOR BUKTI</th><th>KETERANGAN</th><th>KODE AKUN</th><th>AKUN</th><th>DEBIT</th><th>KREDIT</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${date(row.date)}</td><td class="amount">${escapeHtml(row.reference)}</td><td>${escapeHtml(row.description)}</td><td>${row.code}</td><td>${escapeHtml(row.name)}</td><td class="amount">${row.debit ? money(row.debit) : '-'}</td><td class="amount">${row.credit ? money(row.credit) : '-'}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty-state">Tidak ada jurnal pada periode ini.</div>'}</section>`;
+}
+function renderLedger() {
+  const rows = accountingRows();
+  const accounts = [
+    { code: '1.1.01', name: 'Kas', normal: 'debit' },
+    { code: '2.1.01', name: 'Pendapatan Diterima di Muka', normal: 'credit' },
+    { code: '4.1.01', name: 'Pendapatan Membership', normal: 'credit' },
+    { code: '4.2.01', name: 'Pendapatan Non-Membership', normal: 'credit' }
+  ];
+  const visibleAccounts = state.financeFilters.account === 'all' ? accounts : accounts.filter((account) => account.code === state.financeFilters.account);
+  return `<div class="page-heading"><div><div class="eyebrow">FINANCE / GENERAL LEDGER</div><h1>General Ledger</h1><p>Mutasi, saldo awal, dan running balance dari jurnal sistem.</p></div></div><div class="toolbar ledger-filters"><label class="form-row"><span>AKUN</span><select class="select-input" data-finance-account><option value="all">Semua akun</option>${accounts.map((account) => `<option value="${account.code}" ${state.financeFilters.account === account.code ? 'selected' : ''}>${account.code} · ${account.name}</option>`).join('')}</select></label>${periodFilterMarkup()}</div>${visibleAccounts.map((account) => {
+    const allAccountRows = rows.filter((row) => row.code === account.code);
+    const openingRows = state.financeFilters.startDate ? allAccountRows.filter((row) => row.date < state.financeFilters.startDate) : [];
+    let balance = openingRows.reduce((sum, row) => sum + (account.normal === 'debit' ? row.debit - row.credit : row.credit - row.debit), 0);
+    const periodRows = allAccountRows.filter((row) => withinPeriod(row.date, state.financeFilters));
+    const openingRow = state.financeFilters.startDate ? `<tr class="opening-balance-row"><td>${date(state.financeFilters.startDate)}</td><td>-</td><td>Saldo awal periode</td><td>-</td><td>-</td><td class="amount">${money(balance)}</td></tr>` : '';
+    const accountRows = periodRows.map((row) => {
+      balance += account.normal === 'debit' ? row.debit - row.credit : row.credit - row.debit;
+      return `<tr><td>${date(row.date)}</td><td class="amount">${escapeHtml(row.reference)}</td><td>${escapeHtml(row.description)}</td><td class="amount">${row.debit ? money(row.debit) : '-'}</td><td class="amount">${row.credit ? money(row.credit) : '-'}</td><td class="amount">${money(balance)}</td></tr>`;
+    }).join('');
+    return `<section class="panel report-panel"><div class="panel-header"><div><h2 class="panel-title">${account.code} · ${account.name}</h2><p class="panel-subtitle">Saldo normal ${account.normal === 'debit' ? 'debit' : 'kredit'}</p></div><span class="record-count">Saldo ${money(balance)}</span></div>${accountRows || openingRow ? `<div class="table-wrap"><table><thead><tr><th>TANGGAL</th><th>NOMOR BUKTI</th><th>KETERANGAN</th><th>DEBIT</th><th>KREDIT</th><th>SALDO</th></tr></thead><tbody>${openingRow}${accountRows}</tbody></table></div>` : '<div class="empty-state">Belum ada mutasi untuk akun ini pada periode terpilih.</div>'}</section>`;
+  }).join('')}`;
+}
 function renderSettings() { return `<div class="page-heading"><div><div class="eyebrow">SYSTEM CONFIGURATION</div><h1>Pengaturan</h1><p>Hubungkan dashboard ke project Supabase PostgreSQL Anda.</p></div></div><div class="settings-grid"><section class="panel form-card"><h3>Koneksi Supabase</h3><p>Gunakan Project URL dan Publishable Key dari pengaturan API project. Nilai disimpan hanya di browser ini.</p><form id="settingsForm"><div class="form-row"><label for="projectUrl">PROJECT URL</label><input class="form-input" id="projectUrl" type="url" placeholder="https://project-ref.supabase.co" value="${escapeHtml(state.config.url || '')}" required></div><div class="form-row"><label for="publishableKey">PUBLISHABLE KEY</label><input class="form-input" id="publishableKey" type="password" placeholder="sb_publishable_..." value="${escapeHtml(state.config.key || '')}" required></div><button class="primary-button" type="submit">Simpan & sinkronkan</button></form></section><aside class="help-box"><h3>Empat entitas, satu alur.</h3><p>customers, membership_plans, memberships, dan payments terhubung untuk pencatatan pendapatan membership.</p><p>Jalankan schema di SQL Editor Supabase, aktifkan RLS, lalu isi kredensial di sini.</p></aside></div>`; }
-const dashboardHeaderMarkup = `<section class="dashboard-banner"><div class="dashboard-banner-copy"><div class="eyebrow">INTERNAL ACCOUNTING</div><h1>Dashboard</h1><p>Membership & payment revenue overview</p><span>FORME · Staff workspace</span></div><img src="https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=700&q=75" alt="FORME interior" loading="eager"></section>`;
+const dashboardHeaderMarkup = `<section class="dashboard-banner"><div class="dashboard-banner-copy"><div class="eyebrow">INTERNAL ACCOUNTING</div><h1>FORME</h1><p>Fitness &amp; wellness studio finance</p><span>Staff workspace · Membership &amp; revenue</span></div><img src="https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=700&q=75" alt="Area latihan FORMÉ" loading="eager"></section>`;
 const spaces = { gym: { title: 'Gym Area', icon: '✦', intro: 'Strength and cardio service represented by the available membership plans.', items: ['Strength Training', 'Cardio', 'Gym Floor'] }, pilates: { title: 'Pilates', icon: '◌', intro: 'Core and mobility service represented by Pilates membership plans.', items: ['Core training', 'Mobility', 'Controlled movement'] }, yoga: { title: 'Yoga', icon: '⌁', intro: 'Balance and flexibility service represented by Yoga membership plans.', items: ['Balance', 'Flexibility', 'Mindfulness'] }, zumba: { title: 'Zumba', icon: '◉', intro: 'Dance and cardio service represented by Zumba membership plans.', items: ['Dance cardio', 'Rhythm', 'Cardio conditioning'] }, functional: { title: 'Functional Training', icon: '＋', intro: 'Movement and performance service represented by Functional Training plans.', items: ['Movement', 'Performance', 'Strength & endurance'] }, women: { title: 'Women Only', icon: '♡', intro: 'Dedicated women-only service represented by Women Only membership plans.', items: ['Dedicated area', 'Comfortable training', 'Women wellness'] } };
-function activeMembershipMarkup() { const active = state.data.memberships.filter((item) => item.status === 'active').slice(0, 5); return `<section class="panel active-memberships-panel"><div class="panel-header"><div><h2 class="panel-title">Active Memberships</h2><p class="panel-subtitle">Current customer plans</p></div><button class="text-button" data-view="memberships">View all →</button></div>${active.length ? `<div class="active-membership-list">${active.map((item) => { const plan = planById(item.plan_id); return `<div class="active-membership-row"><div class="customer"><span class="customer-avatar">${initials(customerName(item.customer_id))}</span><div><span class="customer-name">${escapeHtml(customerName(item.customer_id))}</span><span class="customer-id">${escapeHtml(planName(item.plan_id))}</span></div></div><span class="service-label">${escapeHtml(planService(plan))}</span><span class="badge active">Active</span></div>`; }).join('')}</div>` : '<div class="empty-state">Belum ada membership aktif.</div>'}</section>`; }
+function activeMembershipMarkup() { const active = state.data.memberships.filter((item) => membershipIsActive(item)); return `<section class="panel active-memberships-panel"><div class="panel-header"><div><h2 class="panel-title">Active Memberships</h2><p class="panel-subtitle">Current customer plans</p></div><button class="text-button" data-action="view-active-memberships">View all →</button></div>${active.length ? `<div class="active-membership-list">${active.map((item) => { const plan = planById(item.plan_id); return `<div class="active-membership-row"><div class="customer"><span class="customer-avatar">${initials(customerName(item.customer_id))}</span><div><span class="customer-name">${escapeHtml(customerName(item.customer_id))}</span><span class="customer-id">${escapeHtml(planName(item.plan_id))}</span></div></div><span class="service-label">${escapeHtml(planService(plan))}</span><span class="badge active">Active</span></div>`; }).join('')}</div>` : '<div class="empty-state">Belum ada membership aktif.</div>'}</section>`; }
 const servicesMarkup = `<section class="services-section"><div class="section-heading"><div><div class="eyebrow">STUDIO CONTEXT</div><h2>Studio Services</h2><p>Services represented through the available membership plans.</p></div></div><div class="services-grid"><article class="service-card" data-action="view-space" data-space="gym" tabindex="0" role="button"><span class="service-icon">✦</span><div><h3>Gym</h3><p>Strength · Cardio</p></div></article><article class="service-card" data-action="view-space" data-space="pilates" tabindex="0" role="button"><span class="service-icon">◌</span><div><h3>Pilates</h3><p>Core · Mobility</p></div></article><article class="service-card" data-action="view-space" data-space="yoga" tabindex="0" role="button"><span class="service-icon">⌁</span><div><h3>Yoga</h3><p>Balance · Flexibility</p></div></article><article class="service-card" data-action="view-space" data-space="zumba" tabindex="0" role="button"><span class="service-icon">◉</span><div><h3>Zumba</h3><p>Dance · Cardio</p></div></article><article class="service-card" data-action="view-space" data-space="functional" tabindex="0" role="button"><span class="service-icon">＋</span><div><h3>Functional Training</h3><p>Movement · Performance</p></div></article><article class="service-card" data-action="view-space" data-space="women" tabindex="0" role="button"><span class="service-icon">♡</span><div><h3>Women Only</h3><p>Dedicated · Comfortable</p></div></article></div></section>`;
-function render() { const content = $('#appContent'); $('#pageKicker').textContent = state.view === 'overview' ? 'DASHBOARD' : state.view === 'reports' ? 'LAPORAN PENDAPATAN' : state.view === 'plans' ? 'MEMBERSHIP PLANS' : state.view.toUpperCase(); content.innerHTML = state.view === 'overview' ? dashboardHeaderMarkup + renderOverview() + accountingSummaryMarkup() + activeMembershipMarkup() + servicesMarkup : state.view === 'members' ? renderMembers() : state.view === 'memberships' ? renderMemberships() : state.view === 'payments' ? renderPayments() : state.view === 'plans' ? renderPlans() : state.view === 'reports' ? renderRevenueReport() : renderSettings(); }
+function render() {
+  const content = $('#appContent');
+  const titles = { overview: 'DASHBOARD', members: 'CUSTOMER & MEMBERSHIP', reports: 'REVENUE & REPORTS', plans: 'MEMBERSHIP PLANS', classes: 'CLASS SCHEDULE', journal: 'JURNAL UMUM', ledger: 'BUKU BESAR', settings: 'SETTINGS' };
+  $('#pageKicker').textContent = titles[state.view] || state.view.toUpperCase();
+  const pages = {
+    overview: () => dashboardHeaderMarkup + renderOverview() + servicesMarkup,
+    members: renderMembers,
+    memberships: renderMemberships,
+    payments: renderPayments,
+    plans: renderPlans,
+    classes: renderClassSchedule,
+    reports: renderRevenueReport,
+    journal: renderJournal,
+    ledger: renderLedger,
+    settings: renderSettings
+  };
+  content.innerHTML = (pages[state.view] || renderSettings)();
+  content.setAttribute('aria-busy', String(state.loading));
+  if (state.loading) content.insertAdjacentHTML('afterbegin', '<div class="loading-banner" role="status">Memuat data terbaru dari Supabase...</div>');
+}
 function optionList(items, label) { return items.map((item) => `<option value="${item.id}">${escapeHtml(label(item))}</option>`).join(''); }
-function paymentMembershipOptions(customerId, selectedId = '') { return state.data.memberships.filter((item) => !customerId || item.customer_id === customerId).map((item) => `<option value="${item.id}" ${item.id === selectedId ? 'selected' : ''}>${escapeHtml(customerName(item.customer_id))} · ${escapeHtml(planName(item.plan_id))} · ${money(item.amount)}</option>`).join(''); }
+function paymentMembershipOptions(customerId, selectedId = '') { return `<option value="">Pilih membership</option>${state.data.memberships.filter((item) => !customerId || item.customer_id === customerId).map((item) => `<option value="${item.id}" ${item.id === selectedId ? 'selected' : ''}>${escapeHtml(customerName(item.customer_id))} · ${escapeHtml(planName(item.plan_id))} · ${money(item.amount)}</option>`).join('')}`; }
 function inputValue(value) { return escapeHtml(value || ''); }
-function syncMembershipFields(form) { if (!form || form.dataset.type !== 'membership') return; const plan = planById(form.elements.plan_id?.value); const start = form.elements.start_date?.value; const info = form.querySelector('#selectedPlanInfo'); if (info) info.innerHTML = plan ? `<div class="plan-info-grid"><span><b>Service</b>${escapeHtml(planService(plan))}</span><span><b>Duration</b>${durationLabel(plan.duration_months)}</span><span><b>Price</b>${money(plan.price)}</span><span><b>Access</b>${escapeHtml(plan.access_label || 'Access details')}</span></div>` : ''; if (plan && form.elements.amount) form.elements.amount.value = plan.price; if (plan && start && form.elements.end_date) form.elements.end_date.value = addMonths(start, plan.duration_months); }
-function syncPaymentFields(form) { if (!form || form.dataset.type !== 'payment') return; const membership = membershipById(form.elements.membership_id?.value); if (membership) { const customerField = form.elements.customer_id; if (customerField) customerField.value = membership.customer_id; if (form.elements.amount) form.elements.amount.value = membership.amount; } const payment = state.data.payments.find((item) => item.id === form.dataset.id); if (payment && !form.querySelector('.journal-section')) form.insertAdjacentHTML('beforeend', paymentJournalMarkup(payment)); }
+function syncMembershipFields(form) { if (!form || form.dataset.type !== 'membership') return; const plan = planById(form.elements.plan_id?.value); const start = form.elements.start_date?.value; const info = form.querySelector('#selectedPlanInfo'); if (info) info.innerHTML = plan ? `<div class="plan-info-grid"><span><b>Service</b>${escapeHtml(planService(plan))}</span><span><b>Duration</b>${durationLabel(plan.duration_months)}</span><span><b>Price</b>${money(plan.price)}</span><span><b>Access</b>${escapeHtml(planAccessDescription(plan))}</span></div>` : ''; if (plan && form.elements.amount) form.elements.amount.value = plan.price; if (plan && start && form.elements.end_date) form.elements.end_date.value = addMonths(start, plan.duration_months); }
+function syncPaymentFields(form) {
+  if (!form || form.dataset.type !== 'payment') return;
+  const paymentKind = form.elements.payment_kind?.value || 'membership';
+  const membershipSelect = form.elements.membership_id;
+  if (membershipSelect) {
+    membershipSelect.disabled = paymentKind !== 'membership';
+    membershipSelect.required = paymentKind === 'membership';
+    if (paymentKind !== 'membership') membershipSelect.value = '';
+  }
+  form.querySelector('.journal-section')?.remove();
+  if (paymentKind !== 'membership') {
+    if (!form.dataset.id && form.elements.amount) form.elements.amount.value = '';
+    const payment = state.data.payments.find((item) => item.id === form.dataset.id);
+    if (payment && paymentRevenueType(payment) === paymentKind) form.insertAdjacentHTML('beforeend', paymentJournalMarkup(payment));
+    return;
+  }
+  const membership = membershipById(form.elements.membership_id?.value);
+  if (membership) {
+    const customerField = form.elements.customer_id;
+    if (customerField) customerField.value = membership.customer_id;
+    if (form.elements.amount && !form.dataset.id) {
+      const alreadyPaid = paidAmountForMembership(membership.id);
+      form.elements.amount.value = Math.max(Number(membership.amount) - alreadyPaid, 0);
+    }
+  }
+  const payment = state.data.payments.find((item) => item.id === form.dataset.id);
+  if (payment && paymentRevenueType(payment) === paymentKind) form.insertAdjacentHTML('beforeend', paymentJournalMarkup(payment));
+}
+function enhancePaymentKindForm(form) {
+  if (!form || form.dataset.type !== 'payment' || form.elements.payment_kind) return;
+  const payment = state.data.payments.find((item) => item.id === form.dataset.id);
+  const selectedKind = payment ? paymentRevenueType(payment) : 'membership';
+  const membershipRow = form.elements.membership_id?.closest('.form-row');
+  if (!membershipRow) return;
+  membershipRow.insertAdjacentHTML('beforebegin', `<div class="form-row"><label for="paymentKind">JENIS PENERIMAAN</label><select class="select-input" id="paymentKind" name="payment_kind"><option value="membership">Membership</option><option value="trial">Trial</option><option value="day_pass">Day Pass</option><option value="non_membership">Non-Membership lainnya</option></select></div>`);
+  form.elements.payment_kind.value = selectedKind;
+  syncPaymentFields(form);
+}
 function openModal(type, item = null) { const editing = Boolean(item); const labels = { customer: 'customer', membership: 'membership', payment: 'payment' }; $('#modalTitle').textContent = `${editing ? 'Edit' : 'Tambah'} ${labels[type] || type}`; const customerOptions = optionList(state.data.customers, (customer) => `${customer.full_name} · ${customer.member_code}`).replace(`value="${item?.customer_id || ''}"`, `value="${item?.customer_id || ''}" selected`); const planOptions = optionList(state.data.plans, (plan) => `${plan.name} · ${money(plan.price)}`).replace(`value="${item?.plan_id || ''}"`, `value="${item?.plan_id || ''}" selected`); const paymentCustomerOptions = optionList(state.data.customers, (customer) => `${customer.full_name} · ${customer.member_code}`).replace(`value="${item?.customer_id || ''}"`, `value="${item?.customer_id || ''}" selected`); const paymentMembershipOptions = paymentMembershipOptionsFor(item?.customer_id || '', item?.membership_id || ''); const fields = type === 'customer' ? `<div class="inline-form"><div class="form-row"><label>KODE MEMBER</label><input class="form-input" name="member_code" value="${inputValue(item?.member_code)}" placeholder="SG-1004" required></div><div class="form-row"><label>NAMA LENGKAP</label><input class="form-input" name="full_name" value="${inputValue(item?.full_name)}" placeholder="Nama customer" required></div></div><div class="form-row"><label>EMAIL</label><input class="form-input" type="email" name="email" value="${inputValue(item?.email)}" placeholder="nama@email.com"></div><div class="form-row"><label>TELEPON</label><input class="form-input" name="phone" value="${inputValue(item?.phone)}" placeholder="+62 ..."></div>` : type === 'membership' ? `<div class="form-row"><label>CUSTOMER</label><select class="select-input" name="customer_id" required>${customerOptions}</select></div><div class="form-row"><label>MEMBERSHIP PLAN</label><select class="select-input" name="plan_id" required>${planOptions}</select><div id="selectedPlanInfo"></div></div><div class="inline-form"><div class="form-row"><label>START DATE</label><input class="form-input" type="date" name="start_date" value="${inputValue(item?.start_date || new Date().toISOString().slice(0, 10))}" required></div><div class="form-row"><label>END DATE</label><input class="form-input" type="date" name="end_date" value="${inputValue(item?.end_date)}" required></div></div><div class="inline-form"><div class="form-row"><label>AMOUNT</label><input class="form-input" type="number" min="1" name="amount" value="${inputValue(item?.amount)}" placeholder="350000" required></div><div class="form-row"><label>STATUS</label><select class="select-input" name="status"><option value="active" ${item?.status === 'active' ? 'selected' : ''}>Active</option><option value="pending" ${item?.status === 'pending' ? 'selected' : ''}>Pending</option><option value="expired" ${item?.status === 'expired' ? 'selected' : ''}>Expired</option><option value="cancelled" ${item?.status === 'cancelled' ? 'selected' : ''}>Cancelled</option></select></div></div>` : `<div class="form-row"><label>CUSTOMER</label><select class="select-input" name="customer_id" required>${paymentCustomerOptions}</select></div><div class="form-row"><label>MEMBERSHIP</label><select class="select-input" name="membership_id" required>${paymentMembershipOptions}</select></div><div class="inline-form"><div class="form-row"><label>AMOUNT</label><input class="form-input" type="number" min="1" name="amount" value="${inputValue(item?.amount)}" placeholder="350000" required></div><div class="form-row"><label>PAYMENT DATE</label><input class="form-input" type="date" name="payment_date" value="${inputValue(item?.payment_date || new Date().toISOString().slice(0, 10))}" required></div></div><div class="inline-form"><div class="form-row"><label>PAYMENT METHOD</label><select class="select-input" name="payment_method"><option value="transfer" ${item?.payment_method === 'transfer' ? 'selected' : ''}>Transfer</option><option value="qris" ${item?.payment_method === 'qris' ? 'selected' : ''}>QRIS</option><option value="cash" ${item?.payment_method === 'cash' ? 'selected' : ''}>Cash</option></select></div><div class="form-row"><label>STATUS</label><select class="select-input" name="status"><option value="paid" ${item?.status === 'paid' ? 'selected' : ''}>Lunas</option><option value="pending" ${item?.status === 'pending' ? 'selected' : ''}>Pending</option><option value="refunded" ${item?.status === 'refunded' ? 'selected' : ''}>Refund</option></select></div></div><div class="form-row"><label>REFERENCE</label><input class="form-input" name="reference" value="${inputValue(item?.reference)}" placeholder="PAY-0001"></div><div class="form-row"><label>NOTES</label><textarea class="form-input" name="notes" rows="3" placeholder="Catatan pembayaran">${inputValue(item?.notes)}</textarea></div>`; $('#entryForm').innerHTML = `${fields}<div class="modal-footer"><button type="button" class="secondary-button" id="cancelModal">Batal</button><button class="primary-button" type="submit">Simpan data</button></div>`; $('#entryForm').dataset.type = type; $('#entryForm').dataset.id = item?.id || ''; $('#modalBackdrop').hidden = false; syncMembershipFields($('#entryForm')); syncPaymentFields($('#entryForm')); }
+document.addEventListener('click', (event) => {
+  const trigger = event.target.closest('[data-action="add-customer"], [data-action="edit"][data-type="customer"]');
+  if (!trigger) return;
+  queueMicrotask(() => {
+    const form = $('#entryForm');
+    if (form?.dataset.type !== 'customer' || form.elements.notes) return;
+    const customer = state.data.customers.find((item) => item.id === form.dataset.id);
+    form.querySelector('.modal-footer')?.insertAdjacentHTML('beforebegin', `<div class="form-row"><label for="customerNotes">CATATAN</label><textarea class="form-input" id="customerNotes" name="notes" rows="3" placeholder="Catatan internal customer">${escapeHtml(customer?.notes || '')}</textarea></div>`);
+  });
+});
 function paymentMembershipOptionsFor(customerId, selectedId = '') { return paymentMembershipOptions(customerId, selectedId); }
-function validateEntry(type, body, id) { if (type === 'customer') { if (!body.member_code || !body.full_name) return 'Kode member dan nama wajib diisi.'; const duplicateCode = state.data.customers.some((item) => item.id !== id && item.member_code.trim().toLowerCase() === body.member_code.trim().toLowerCase()); const duplicateEmail = body.email && state.data.customers.some((item) => item.id !== id && item.email?.trim().toLowerCase() === body.email.trim().toLowerCase()); if (duplicateCode) return 'Kode member sudah digunakan.'; if (duplicateEmail) return 'Email sudah digunakan.'; } if (type === 'membership' && (!body.customer_id || !body.plan_id || !body.start_date || !body.end_date)) return 'Customer, plan, dan tanggal wajib diisi.'; if (type === 'payment' && (!body.customer_id || !body.membership_id || !body.payment_date || !body.payment_method || !body.status)) return 'Customer, membership, tanggal, metode, dan status wajib diisi.'; if ((type === 'membership' || type === 'payment') && (!body.amount || Number(body.amount) <= 0)) return 'Amount harus lebih dari 0.'; if (type === 'membership' && body.end_date < body.start_date) return 'End date tidak boleh sebelum start date.'; return ''; }
-async function submitEntry(event) { event.preventDefault(); const formElement = event.target; const type = formElement.dataset.type; const id = formElement.dataset.id; const body = Object.fromEntries(new FormData(formElement).entries()); if (type === 'membership' || type === 'payment') body.amount = Number(body.amount); const validationError = validateEntry(type, body, id); if (validationError) { showToast(validationError, true); return; } const table = collectionFor(type); try { if (!apiReady()) { const demoBody = { ...body, id: id || `demo-${Date.now()}` }; const collection = state.data[table]; state.data[table] = id ? collection.map((item) => item.id === id ? demoBody : item) : [...collection, demoBody]; } else if (id) { const updatedRows = await supabase(table, { method: 'PATCH', query: `?id=eq.${encodeURIComponent(id)}&select=*`, body }); if (!Array.isArray(updatedRows) || updatedRows.length === 0) throw new Error('Data tidak ditemukan atau tidak dapat diperbarui.'); await loadData(false); } else { await supabase(table, { method: 'POST', body }); await loadData(false); } $('#modalBackdrop').hidden = true; render(); showToast(`${labelsForType(type)} berhasil ${id ? 'diperbarui' : 'ditambahkan'}.`); } catch (error) { console.error('Gagal menyimpan data:', error); showToast(`Gagal ${id ? 'mengedit' : 'menyimpan'} data: ${supabaseError(error)}`, true); } }
+function validateEntry(type, body, id, paymentKind = 'membership') {
+  if (type === 'customer') {
+    if (!body.member_code || !body.full_name) return 'Kode member dan nama wajib diisi.';
+    const duplicateCode = state.data.customers.some((item) => item.id !== id && item.member_code.trim().toLowerCase() === body.member_code.trim().toLowerCase());
+    const duplicateEmail = body.email && state.data.customers.some((item) => item.id !== id && item.email?.trim().toLowerCase() === body.email.trim().toLowerCase());
+    if (duplicateCode) return 'Kode member sudah digunakan.';
+    if (duplicateEmail) return 'Email sudah digunakan.';
+  }
+  if (type === 'membership' && (!body.customer_id || !body.plan_id || !body.start_date || !body.end_date)) return 'Customer, plan, dan tanggal wajib diisi.';
+  if (type === 'payment' && (!body.customer_id || paymentKind === 'membership' && !body.membership_id || !body.payment_date || !body.payment_method || !body.status)) return 'Customer, kategori payment, tanggal, metode, dan status wajib diisi.';
+  if ((type === 'membership' || type === 'payment') && (!body.amount || Number(body.amount) <= 0)) return 'Amount harus lebih dari 0.';
+  if (type === 'membership' && body.end_date < body.start_date) return 'End date tidak boleh sebelum start date.';
+  if (type === 'payment') {
+    if (paymentKind === 'membership') {
+      const membership = membershipById(body.membership_id);
+      if (!membership || membership.customer_id !== body.customer_id) return 'Membership harus milik customer yang dipilih.';
+      if (body.status === 'paid') {
+        const otherPayments = state.data.payments.filter((payment) => payment.membership_id === body.membership_id && payment.status === 'paid' && payment.id !== id);
+        const alreadyPaid = otherPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+        if (alreadyPaid + Number(body.amount) > Number(membership.amount) + 0.005) return 'Total pembayaran lunas tidak boleh melebihi nilai membership.';
+      }
+    }
+  }
+  return '';
+}
+async function submitEntry(event) {
+  event.preventDefault();
+  if (!apiReady()) { showToast('Hubungkan Supabase terlebih dahulu untuk menyimpan data.', true); return; }
+  const formElement = event.target;
+  const type = formElement.dataset.type;
+  const id = formElement.dataset.id;
+  const body = Object.fromEntries(new FormData(formElement).entries());
+  let paymentKind = 'membership';
+  if (type === 'payment') {
+    paymentKind = body.payment_kind || 'membership';
+    delete body.payment_kind;
+    if (paymentKind === 'membership') {
+      body.notes = cleanPaymentNotes(body.notes);
+      body.membership_id = body.membership_id || null;
+    } else {
+      body.membership_id = null;
+      body.notes = ['trial', 'day_pass'].includes(paymentKind) ? taggedNonMembershipNotes(paymentKind, body.notes) : cleanPaymentNotes(body.notes);
+    }
+  }
+  if (type === 'membership' || type === 'payment') body.amount = Number(body.amount);
+  const validationError = validateEntry(type, body, id, paymentKind);
+  if (validationError) { showToast(validationError, true); return; }
+  const table = collectionFor(type);
+  try {
+    if (id) {
+      const updatedRows = await supabase(table, { method: 'PATCH', query: `?id=eq.${encodeURIComponent(id)}&select=*`, body });
+      if (!Array.isArray(updatedRows) || updatedRows.length === 0) throw new Error('Data tidak ditemukan atau tidak dapat diperbarui.');
+    } else {
+      await supabase(table, { method: 'POST', body });
+    }
+    await loadData(false);
+    $('#modalBackdrop').hidden = true;
+    render();
+    showToast(`${labelsForType(type)} berhasil ${id ? 'diperbarui' : 'ditambahkan'}.`);
+  } catch (error) {
+    console.error('Gagal menyimpan data:', error);
+    showToast(`Gagal ${id ? 'mengedit' : 'menyimpan'} data: ${supabaseError(error)}`, true);
+  }
+}
 function labelsForType(type) { return type === 'customer' ? 'Customer' : type === 'membership' ? 'Membership' : 'Payment'; }
-async function deleteEntry(type, id) { const label = labelsForType(type); if (!window.confirm(`Hapus ${label} ini? Tindakan ini tidak dapat dibatalkan.`)) return; const table = collectionFor(type); try { if (!apiReady()) state.data[table] = state.data[table].filter((item) => item.id !== id); else { await supabase(table, { method: 'DELETE', query: `?id=eq.${encodeURIComponent(id)}` }); await loadData(false); } render(); showToast(`${label} berhasil dihapus.`); } catch (error) { console.error('Gagal menghapus data:', error); showToast('Data gagal dihapus. Periksa policy Supabase.', true); } }
-document.addEventListener('click', (event) => { const nav = event.target.closest('[data-view]'); if (nav) { state.view = nav.dataset.view; document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item === nav)); render(); return; } const target = event.target.closest('[data-action]'); if (!target) return; const action = target.dataset.action; if (action === 'add-customer') openModal('customer'); if (action === 'add-membership') openModal('membership'); if (action === 'add-payment') openModal('payment'); if (action === 'view-payments') { state.view = 'payments'; render(); } if (action === 'view-membership-plans') { state.view = 'plans'; document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.view === 'plans')); render(); window.scrollTo({ top: 0, behavior: 'smooth' }); } if (action === 'edit') openModal(target.dataset.type, state.data[collectionFor(target.dataset.type)].find((item) => item.id === target.dataset.id)); if (action === 'delete') void deleteEntry(target.dataset.type, target.dataset.id); if (action === 'view-space') openSpaceDetail(target.dataset.space); });
-document.addEventListener('click', (event) => { const journalTrigger = event.target.closest('[data-action="view-journal"]'); if (!journalTrigger) return; const payment = state.data.payments.find((item) => item.id === journalTrigger.dataset.id); if (payment) openModal('payment', payment); });
+async function deleteEntry(type, id) {
+  if (!apiReady()) { showToast('Hubungkan Supabase terlebih dahulu untuk menghapus data.', true); return; }
+  const label = labelsForType(type);
+  if (!window.confirm(`Hapus ${label} ini? Tindakan ini tidak dapat dibatalkan.`)) return;
+  const table = collectionFor(type);
+  try {
+    await supabase(table, { method: 'DELETE', query: `?id=eq.${encodeURIComponent(id)}` });
+    await loadData(false);
+    render();
+    showToast(`${label} berhasil dihapus.`);
+  } catch (error) {
+    console.error('Gagal menghapus data:', error);
+    showToast('Data gagal dihapus. Periksa policy Supabase.', true);
+  }
+}
+document.addEventListener('click', (event) => { const target = event.target.closest('[data-action="view-active-memberships"]'); if (!target) return; state.view = 'members'; state.customerFilter = 'active'; document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.view === 'members')); render(); });
+document.addEventListener('click', (event) => { const nav = event.target.closest('[data-view]'); if (nav) { state.view = nav.dataset.view; document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item === nav)); render(); return; } const target = event.target.closest('[data-action]'); if (!target) return; const action = target.dataset.action; if (action === 'add-customer') openModal('customer'); if (action === 'add-membership') openModal('membership'); if (action === 'add-payment') openModal('payment'); if (action === 'view-payments') { state.view = 'payments'; render(); } if (action === 'view-membership-plans') { state.view = 'plans'; document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.view === 'plans')); render(); window.scrollTo({ top: 0, behavior: 'smooth' }); } if (action === 'toggle-class-session-form') { state.showClassSessionForm = !state.showClassSessionForm; render(); } if (action === 'select-class-session') { state.selectedClassSessionId = target.dataset.id; render(); } if (action === 'cancel-class-registration') void cancelClassRegistration(target.dataset.id); if (action === 'edit') openModal(target.dataset.type, state.data[collectionFor(target.dataset.type)].find((item) => item.id === target.dataset.id)); if (action === 'delete') void deleteEntry(target.dataset.type, target.dataset.id); if (action === 'view-space') openSpaceDetail(target.dataset.space); });
+document.addEventListener('click', (event) => {
+  const trigger = event.target.closest('[data-action="add-payment"], [data-action="edit"][data-type="payment"]');
+  if (trigger) queueMicrotask(() => enhancePaymentKindForm($('#entryForm')));
+});
+document.addEventListener('click', (event) => {
+  const trigger = event.target.closest('[data-action="add-payment"], [data-action="edit"][data-type="payment"]');
+  if (trigger) queueMicrotask(() => enhancePaymentKindForm($('#entryForm')));
+});
+document.addEventListener('click', (event) => { const journalTrigger = event.target.closest('[data-action="view-journal"]'); if (!journalTrigger) return; state.view = 'journal'; document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.view === 'journal')); render(); });
 document.addEventListener('keydown', (event) => { if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('.service-card')) { event.preventDefault(); openSpaceDetail(event.target.dataset.space); } });
-document.addEventListener('change', (event) => { if (event.target.id === 'planServiceFilter') { state.planFilters.service = event.target.value; render(); } if (event.target.id === 'planDurationFilter') { state.planFilters.duration = event.target.value; render(); } if (event.target.name === 'plan_id' || event.target.name === 'start_date') syncMembershipFields(event.target.form); if (event.target.name === 'customer_id' && event.target.form?.dataset.type === 'payment') { const membershipSelect = event.target.form.elements.membership_id; membershipSelect.innerHTML = paymentMembershipOptions(event.target.value); syncPaymentFields(event.target.form); } if (event.target.name === 'membership_id') syncPaymentFields(event.target.form); });
-$('#quickAddButton').addEventListener('click', () => openModal('payment'));
+document.addEventListener('change', (event) => {
+  const target = event.target;
+  if (target.dataset.classFilter) { state.classFilters[target.dataset.classFilter] = target.value; state.selectedClassSessionId = ''; render(); return; }
+  if (target.name === 'service' && target.form?.id === 'classSessionForm') target.form.elements.capacity.value = CLASS_CAPACITY_DEFAULTS[target.value] || 12;
+  if (target.name === 'payment_kind') { syncPaymentFields(target.form); return; }
+  if (target.id === 'customerFilter') { state.customerFilter = target.value; render(); return; }
+  if (target.name === 'payment_kind') { syncPaymentFields(target.form); return; }
+  $('#quickAddButton').addEventListener('click', () => { openModal('payment'); queueMicrotask(() => enhancePaymentKindForm($('#entryForm'))); });
+  if (target.dataset.periodFilter) { state.financeFilters[target.dataset.periodFilter] = target.value; render(); return; }
+  if (target.dataset.paymentFilter) { state.paymentFilters[target.dataset.paymentFilter] = target.value; render(); return; }
+  if (target.dataset.financeAccount) { state.financeFilters.account = target.value; render(); return; }
+  if (target.id === 'planServiceFilter') { state.planFilters.service = target.value; render(); }
+  if (target.id === 'planDurationFilter') { state.planFilters.duration = target.value; render(); }
+  if (target.id === 'membershipStatusFilter') { state.membershipFilter = target.value; render(); }
+  if (target.name === 'plan_id' || target.name === 'start_date') syncMembershipFields(target.form);
+  if (target.name === 'customer_id' && target.form?.dataset.type === 'payment') {
+    const membershipSelect = target.form.elements.membership_id;
+    membershipSelect.innerHTML = paymentMembershipOptions(target.value);
+    syncPaymentFields(target.form);
+  }
+  if (target.name === 'membership_id') syncPaymentFields(target.form);
+});
+$('#quickAddButton').addEventListener('click', () => { openModal('payment'); queueMicrotask(() => enhancePaymentKindForm($('#entryForm'))); });
 $('#refreshButton').addEventListener('click', async () => { try { await loadData(); render(); } catch (error) {} });
 $('#closeModal').addEventListener('click', () => { $('#modalBackdrop').hidden = true; });
 document.addEventListener('click', (event) => { if (event.target.id === 'cancelModal') $('#modalBackdrop').hidden = true; });
-document.addEventListener('submit', (event) => { if (event.target.id === 'entryForm') { void submitEntry(event); return; } if (event.target.id === 'settingsForm') { event.preventDefault(); state.config = { url: $('#projectUrl').value.replace(/\/$/, ''), key: $('#publishableKey').value.trim() }; localStorage.setItem('studioGymConfig', JSON.stringify(state.config)); loadData().then(render).catch(() => render()); } });
-document.addEventListener('input', (event) => { if (event.target.id === 'customerSearch') { const query = event.target.value.toLowerCase(); $('#customerPanel').innerHTML = customerTable(state.data.customers.filter((item) => `${item.full_name} ${item.member_code} ${item.email}`.toLowerCase().includes(query))); } });
-$('#todayLabel').textContent = new Intl.DateTimeFormat('id-ID', {
-  day: 'numeric',
-  month: 'long',
-  year: 'numeric'
-}).format(new Date());
-
-async function initializeApp() {
-  try {
-    state.config = {
-      url: 'https://vmecalefbqgjiexdhaab.supabase.co',
-      key: 'sb_publishable_FRGET5D7bDAdySoctcuI7Q_9dF-JCNO'
-    };
-
-    await loadData(false);
-    render();
-  } catch (error) {
-    console.error('Gagal menghubungkan Supabase:', error);
-    $('#connectionLabel').textContent = 'Koneksi gagal, mode demo';
-    render();
+document.addEventListener('submit', (event) => { if (event.target.id === 'entryForm') { void submitEntry(event); return; } if (event.target.id === 'classSessionForm') { void saveClassSession(event); return; } if (event.target.id === 'classRegistrationForm') { void registerForClass(event); return; } if (event.target.id === 'settingsForm') { event.preventDefault(); state.config = { url: $('#projectUrl').value.replace(/\/$/, ''), key: $('#publishableKey').value.trim() }; localStorage.setItem('studioGymConfig', JSON.stringify(state.config)); loadData().then(render).catch(() => render()); } });
+document.addEventListener('input', (event) => {
+  if (event.target.id === 'customerSearch') {
+    state.customerSearch = event.target.value;
+    $('#customerPanel').innerHTML = customerTable(visibleCustomers());
   }
-}
-
-initializeApp();
+  if (event.target.id === 'membershipSearch') {
+    state.membershipSearch = event.target.value;
+    $('#membershipPanel').innerHTML = membershipTable(filteredMemberships());
+  }
+});
+$('#todayLabel').textContent = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date());
+render();
+loadData().catch(() => {});

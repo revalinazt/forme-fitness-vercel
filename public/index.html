@@ -14,18 +14,29 @@
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand"><span class="brand-mark" aria-label="FORME logo"><span class="logo-f">F</span><span class="logo-motion"></span></span><div class="brand-copy"><strong>FORME</strong><span class="brand-subbrand">FITNESS &amp; WELLNESS</span><small>Membership &amp; Payment Management</small><span class="brand-tagline">Fitness · Pilates · Yoga · Zumba</span></div></div>
-      <div class="workspace-label">MAIN</div>
+      <div class="workspace-label">OVERVIEW</div>
       <nav class="nav-list" aria-label="Navigasi utama">
         <button class="nav-item active" data-view="overview"><span class="nav-icon">◈</span> Dashboard</button>
-        <button class="nav-item" data-view="members"><span class="nav-icon">◎</span> Customers</button>
-        <button class="nav-item" data-view="memberships"><span class="nav-icon">◷</span> Memberships</button>
-        <button class="nav-item" data-view="payments"><span class="nav-icon">↗</span> Payments</button>
+      </nav>
+      <div class="workspace-label">MEMBERSHIP</div>
+      <nav class="nav-list" aria-label="Data membership">
+        <button class="nav-item" data-view="members"><span class="nav-icon">◎</span> Customer &amp; Membership</button>
         <button class="nav-item" data-view="plans"><span class="nav-icon">▦</span> Membership Plans</button>
+        <button class="nav-item" data-view="classes"><span class="nav-icon">◷</span> Class Schedule</button>
+        <button class="nav-item" data-view="payments"><span class="nav-icon">↗</span> Payments</button>
+      </nav>
+      <div class="workspace-label">FINANCE</div>
+      <nav class="nav-list" aria-label="Akuntansi">
+        <button class="nav-item" data-view="journal"><span class="nav-icon">≡</span> Jurnal Umum</button>
+        <button class="nav-item" data-view="ledger"><span class="nav-icon">▥</span> Buku Besar</button>
         <button class="nav-item" data-view="reports"><span class="nav-icon">▤</span> Laporan Pendapatan</button>
       </nav>
+      <div class="workspace-label">SYSTEM</div>
+      <nav class="nav-list" aria-label="Sistem">
+        <button class="nav-item" data-view="settings"><span class="nav-icon">⚙</span> Settings</button>
+      </nav>
       <div class="sidebar-bottom">
-        <div class="sync-card"><span class="status-dot"></span><div><strong>Data tersinkron</strong><small id="connectionLabel">Mode demo aktif</small></div></div>
-        <button class="nav-item" data-view="settings"><span class="nav-icon">⚙</span> Pengaturan</button>
+        <div class="sync-card"><span class="status-dot"></span><div><strong>Status koneksi</strong><small id="connectionLabel">Menunggu koneksi Supabase</small></div></div>
         <div class="user-chip"><div class="avatar">AD</div><div><strong>Admin Studio</strong><small>Operator keuangan</small></div><span class="more">•••</span></div>
       </div>
     </aside>
